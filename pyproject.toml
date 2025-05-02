@@ -1,0 +1,10 @@
+[project]
+name = "garmin-connect-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "garminconnect>=0.2.26",
+    "mcp[cli]>=1.7.0",
+]
