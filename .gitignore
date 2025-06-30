@@ -9,3 +9,25 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Personal and local files
+CLAUDE.md
+CODE_REVIEW.md
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Local configuration
+config.local.json
+settings.local.json

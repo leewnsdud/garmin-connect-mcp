@@ -1,10 +1,12 @@
 [project]
 name = "garmin-connect-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for Garmin Connect running data and training plan assistance"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "garminconnect>=0.2.26",
+    "garth>=0.5.3",
     "mcp[cli]>=1.7.0",
+    "python-dotenv>=1.0.0",
 ]

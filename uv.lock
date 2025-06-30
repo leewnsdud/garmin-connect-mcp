@@ -82,13 +82,17 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "garminconnect" },
+    { name = "garth" },
     { name = "mcp", extra = ["cli"] },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "garminconnect", specifier = ">=0.2.26" },
+    { name = "garth", specifier = ">=0.5.3" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.7.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [[package]]
