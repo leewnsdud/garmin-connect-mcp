@@ -68,6 +68,31 @@ uv run python setup_garmin_auth.py
 uv run python setup_claude_desktop.py
 ```
 
+5-1. Claude Desktop MCP 서버 직접 설정
+
+- claude_desktop_config.json 파일에 직접 설정
+
+```json
+{
+  "mcpServers": {
+    "garmin-connect": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": [
+        "run",
+        "--directory",
+        "/[디렉토리 경로]/garmin-connect-mcp",
+        "python",
+        "main.py"
+      ],
+      "env": {
+        "GARMIN_USERNAME": [Garmin Connect 이메일],
+        "GARMIN_PASSWORD": [Garmin Connect 비밀번호]
+      }
+    }
+  }
+}
+```
+
 ## 사용 가능한 도구 (총 27개)
 
 ### 🏃 퍼포먼스 분석 (7개)
