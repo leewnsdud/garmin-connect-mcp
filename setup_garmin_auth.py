@@ -195,11 +195,39 @@ LOG_LEVEL=INFO
         env_file.write_text('\n'.join(lines))
         print("📋 Updated .env file with new credentials")
 
-def setup_authentication():
-    """Setup Garmin Connect authentication tokens"""
+def remove_token_directories(dirs):
+    for tdir in dirs:
+        try:
+            if tdir.exists():
+                shutil.rmtree(tdir)
+                print(f"🗑️  Removed tokens at {tdir}")
+        except Exception as e:
+            print(f"⚠️  Failed to remove {tdir}: {e}")
+
+def setup_authentication(fresh: bool = False):
+    """Setup Garmin Connect authentication tokens.
+
+    If fresh=True or AUTH_FRESH/GARMINTOKENS_FRESH is set, existing tokens are deleted first.
+    """
     
     print("🏃‍♂️ Garmin Connect MCP Server - Authentication Setup")
     print("=" * 60)
+    
+    # Fresh mode determination (CLI param or env)
+    env_fresh = str(os.getenv("AUTH_FRESH", "")).lower() in ["1", "true", "yes", "y"] or \
+                str(os.getenv("GARMINTOKENS_FRESH", "")).lower() in ["1", "true", "yes", "y"]
+
+    # Configure optional OAuth consumer
+    configure_oauth_consumer_from_env()
+
+    # Setup token storage (prefer ~/.garminconnect or GARMINTOKENS)
+    token_dir = get_token_dir()
+    legacy_dir = Path.home() / ".garth"
+
+    # Fresh cleanup before anything else
+    if fresh or env_fresh:
+        print("🧹 Fresh setup requested - removing existing token directories...")
+        remove_token_directories([token_dir, legacy_dir])
     
     # Get credentials from user input or environment
     username, password = get_credentials()
@@ -211,26 +239,31 @@ def setup_authentication():
     print(f"📧 Username: {username}")
     print("🔐 Password: [HIDDEN]")
     
-    # Configure optional OAuth consumer
-    configure_oauth_consumer_from_env()
-
-    # Setup token storage (prefer ~/.garminconnect or GARMINTOKENS)
-    token_dir = get_token_dir()
     print(f"📁 Token storage: {token_dir}")
 
-    # Migrate from legacy ~/.garth if needed
-    migrate_legacy_tokens_if_needed(token_dir)
+    # If not fresh, optionally migrate legacy tokens
+    if not (fresh or env_fresh):
+        migrate_legacy_tokens_if_needed(token_dir)
     
     # Check if tokens already exist
     if token_dir.exists() and list(token_dir.glob("*.json")):
         print("\n🔍 Existing tokens found. Testing...")
+        # Ask user whether to reuse or delete when interactive
         try:
-            garth.resume(str(token_dir))
-            print("✅ Existing tokens are valid!")
-            return test_api_access(token_dir)
-        except Exception as e:
-            print(f"⚠️  Existing tokens invalid: {e}")
-            print("🔄 Proceeding with fresh authentication...")
+            choice = input("Reuse existing tokens? (Y/n, 'd' to delete and re-auth): ").strip().lower()
+        except Exception:
+            choice = ""
+        if choice in ["n", "no", "d", "delete"]:
+            print("🧹 Deleting existing tokens and continuing with fresh authentication...")
+            remove_token_directories([token_dir, legacy_dir])
+        else:
+            try:
+                garth.resume(str(token_dir))
+                print("✅ Existing tokens are valid!")
+                return test_api_access(token_dir)
+            except Exception as e:
+                print(f"⚠️  Existing tokens invalid: {e}")
+                print("🔄 Proceeding with fresh authentication...")
     
     # Attempt authentication
     print(f"\n🔐 Attempting to authenticate with Garmin Connect...")
