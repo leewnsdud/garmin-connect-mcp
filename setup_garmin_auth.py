@@ -9,6 +9,87 @@ import garth
 import getpass
 from pathlib import Path
 from dotenv import load_dotenv
+import shutil
+from typing import Tuple
+
+# Optional imports used for SSL troubleshooting
+try:
+    import certifi  # Provided transitively via requests
+except Exception:
+    certifi = None  # type: ignore
+try:
+    from requests.exceptions import SSLError  # type: ignore
+except Exception:
+    SSLError = Exception  # Fallback type
+
+def get_token_dir() -> Path:
+    """Determine token storage directory (default to ~/.garminconnect).
+
+    Honors environment overrides commonly used by python-garminconnect:
+    - GARMINTOKENS
+    - GARMINCONNECT_TOKEN_DIR (fallback alias)
+    """
+    load_dotenv()
+    env_dir = os.getenv("GARMINTOKENS") or os.getenv("GARMINCONNECT_TOKEN_DIR")
+    if env_dir:
+        return Path(env_dir).expanduser()
+    return Path.home() / ".garminconnect"
+
+def migrate_legacy_tokens_if_needed(dest_dir: Path) -> None:
+    """Migrate legacy ~/.garth tokens into dest_dir if present and dest is empty.
+
+    This helps users who previously used garth-only tokens.
+    """
+    legacy_dir = Path.home() / ".garth"
+    try:
+        if legacy_dir.exists() and legacy_dir.is_dir():
+            if not dest_dir.exists() or not any(dest_dir.glob("*")):
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                for f in legacy_dir.glob("*.json"):
+                    shutil.copy2(f, dest_dir / f.name)
+                print(f"🔀 Migrated legacy tokens from {legacy_dir} → {dest_dir}")
+    except Exception as e:
+        print(f"⚠️  Token migration skipped due to error: {e}")
+
+def configure_oauth_consumer_from_env() -> None:
+    """Configure garth OAuth consumer from environment if provided.
+
+    Supports both GARTH_OAUTH_KEY/SECRET and GARMIN_OAUTH_CONSUMER_KEY/SECRET.
+    """
+    load_dotenv()
+    key = os.getenv("GARTH_OAUTH_KEY") or os.getenv("GARMIN_OAUTH_CONSUMER_KEY")
+    secret = os.getenv("GARTH_OAUTH_SECRET") or os.getenv("GARMIN_OAUTH_CONSUMER_SECRET")
+    if key and secret:
+        try:
+            garth.sso.OAUTH_CONSUMER = {"key": key, "secret": secret}
+            print("🔧 Using custom OAuth consumer from environment")
+        except Exception as e:
+            print(f"⚠️  Failed to set custom OAuth consumer: {e}")
+
+def is_ssl_cert_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        isinstance(exc, SSLError)
+        or "certificate verify failed" in msg
+        or "ssl: certificate_verify_failed" in msg
+        or "unable to get local issuer certificate" in msg
+    )
+
+def configure_certifi_env() -> Tuple[bool, str]:
+    """Point SSL env variables to certifi CA bundle if available.
+
+    Returns (configured, path_or_reason)
+    """
+    try:
+        if certifi is None:
+            return (False, "certifi module not available")
+        ca_path = certifi.where()
+        # Do not overwrite if user already configured
+        os.environ.setdefault("SSL_CERT_FILE", ca_path)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_path)
+        return (True, ca_path)
+    except Exception as e:
+        return (False, f"{e}")
 
 def get_credentials():
     """Get Garmin Connect credentials from user input or environment variables"""
@@ -61,7 +142,6 @@ def save_credentials_to_env(username, password):
     if not env_file.exists():
         template_file = Path(".env.template")
         if template_file.exists():
-            import shutil
             shutil.copy(template_file, env_file)
             print("📋 Created .env file from template")
         else:
@@ -73,6 +153,15 @@ GARMIN_PASSWORD={password}
 # Optional: Custom OAuth consumer settings (leave blank to use defaults)
 GARMIN_OAUTH_CONSUMER_KEY=
 GARMIN_OAUTH_CONSUMER_SECRET=
+
+# Optional: Alternative variable names for OAuth consumer (garth-native)
+GARTH_OAUTH_KEY=
+GARTH_OAUTH_SECRET=
+
+# Optional: Token storage directory override (default: ~/.garminconnect)
+# Commonly used by python-garminconnect
+GARMINTOKENS=
+GARMINCONNECT_TOKEN_DIR=
 
 # Logging level (DEBUG, INFO, WARNING, ERROR)
 LOG_LEVEL=INFO
@@ -122,9 +211,15 @@ def setup_authentication():
     print(f"📧 Username: {username}")
     print("🔐 Password: [HIDDEN]")
     
-    # Setup token storage
-    token_dir = Path.home() / ".garth"
+    # Configure optional OAuth consumer
+    configure_oauth_consumer_from_env()
+
+    # Setup token storage (prefer ~/.garminconnect or GARMINTOKENS)
+    token_dir = get_token_dir()
     print(f"📁 Token storage: {token_dir}")
+
+    # Migrate from legacy ~/.garth if needed
+    migrate_legacy_tokens_if_needed(token_dir)
     
     # Check if tokens already exist
     if token_dir.exists() and list(token_dir.glob("*.json")):
@@ -132,7 +227,7 @@ def setup_authentication():
         try:
             garth.resume(str(token_dir))
             print("✅ Existing tokens are valid!")
-            return test_api_access()
+            return test_api_access(token_dir)
         except Exception as e:
             print(f"⚠️  Existing tokens invalid: {e}")
             print("🔄 Proceeding with fresh authentication...")
@@ -150,11 +245,35 @@ def setup_authentication():
         garth.save(str(token_dir))
         print(f"💾 Tokens saved to {token_dir}")
         
-        return test_api_access()
+        return test_api_access(token_dir)
         
     except Exception as e:
         error_msg = str(e).lower()
-        
+
+        # SSL certificate issues: attempt auto-fix via certifi and retry once
+        if is_ssl_cert_error(e):
+            print("\n🚧 SSL 인증서 검증 오류를 감지했습니다. 자동으로 CA 번들을 설정해 재시도합니다.")
+            ok, info = configure_certifi_env()
+            if ok:
+                print(f"🔒 Using CA bundle: {info}")
+            else:
+                print(f"⚠️  Unable to configure certifi CA bundle automatically: {info}")
+
+            try:
+                garth.login(username, password)
+                garth.save(str(token_dir))
+                print("✅ 재시도 성공: 인증 완료 및 토큰 저장")
+                return test_api_access(token_dir)
+            except Exception as retry_err:
+                print(f"❌ 재시도 실패: {retry_err}")
+                print("\n🔧 해결 가이드:")
+                print("- macOS: Python.org 배포본 사용 시 'Install Certificates.command' 실행")
+                print("- certifi 최신화: uv run python -m pip install -U certifi")
+                print("- 환경변수로 CA 번들 지정: export SSL_CERT_FILE=$(python -c 'import certifi;print(certifi.where())'); export REQUESTS_CA_BUNDLE=$SSL_CERT_FILE")
+                print("- 사내 프록시/보안 솔루션 사용 시, 조직 루트 CA를 REQUESTS_CA_BUNDLE로 지정")
+                print("- 네트워크/프록시 설정 확인 후 재시도")
+                return False
+
         if "mfa" in error_msg or "verification" in error_msg:
             print("🔐 Multi-Factor Authentication (MFA) required!")
             return handle_mfa_login(username, password, token_dir)
@@ -198,18 +317,18 @@ def handle_mfa_login(username, password, token_dir):
             garth.save(str(token_dir))
             print(f"💾 Tokens saved to {token_dir}")
             
-            return test_api_access()
+            return test_api_access(token_dir)
         else:
             print("✅ Authentication successful without MFA!")
             garth.save(str(token_dir))
-            return test_api_access()
+            return test_api_access(token_dir)
             
     except Exception as e:
         print(f"❌ MFA authentication failed: {e}")
         return False
 
-def test_api_access():
-    """Test if API access is working"""
+def test_api_access(token_dir: Path):
+    """Test if API access is working via both garth and python-garminconnect."""
     
     print("\n🧪 Testing API access...")
     
@@ -217,7 +336,7 @@ def test_api_access():
         from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")
         
-        # Test basic API call
+        # Test basic API call with garth
         try:
             steps = garth.DailySteps.get(today)
             if steps:
@@ -228,6 +347,36 @@ def test_api_access():
         except Exception as api_error:
             print(f"⚠️  API test failed: {api_error}")
             print("✅ But authentication tokens were created successfully")
+
+        # Additional test with python-garminconnect if available
+        try:
+            from garminconnect import Garmin
+            gc_user = os.getenv("GARMIN_USERNAME")
+            gc_pass = os.getenv("GARMIN_PASSWORD")
+            if gc_user and gc_pass:
+                client = Garmin(gc_user, gc_pass)
+                try:
+                    # Prefer token login first
+                    client.login(str(token_dir))
+                    print("✅ garminconnect: token login successful")
+                except Exception as token_login_err:
+                    print(f"ℹ️  garminconnect: token login failed, trying credential login ({token_login_err})")
+                    client.login()
+                    print("✅ garminconnect: credential login successful")
+                try:
+                    stats = client.get_stats(today)
+                    rhr = None
+                    try:
+                        hr = client.get_heart_rates(today) or {}
+                        rhr = hr.get('restingHeartRate') if isinstance(hr, dict) else None
+                    except Exception:
+                        pass
+                    print(f"✅ garminconnect API test OK (stats keys: {list(stats.keys())[:3]})" + (f", RHR: {rhr}" if rhr is not None else ""))
+                except Exception as gc_api_err:
+                    print(f"⚠️  garminconnect API test failed: {gc_api_err}")
+        except ImportError:
+            # garminconnect not installed, skip secondary test
+            pass
         
         print("\n🎉 Setup complete!")
         print("You can now use the Garmin Connect MCP server.")
@@ -247,7 +396,7 @@ def check_token_status():
     print("🔍 Checking Garmin Connect token status...")
     print("=" * 50)
     
-    token_dir = Path.home() / ".garth"
+    token_dir = get_token_dir()
     
     if not token_dir.exists():
         print("❌ No tokens found. Run setup first.")
@@ -256,7 +405,7 @@ def check_token_status():
     try:
         garth.resume(str(token_dir))
         print("✅ Tokens are valid and ready to use!")
-        return test_api_access()
+        return test_api_access(token_dir)
     except Exception as e:
         print(f"❌ Tokens are invalid: {e}")
         print("🔄 Please run setup again to re-authenticate")
@@ -272,12 +421,15 @@ def main():
             print("🔄 Resetting authentication...")
             print("=" * 40)
             
-            # Remove existing tokens
-            token_dir = Path.home() / ".garth"
-            if token_dir.exists():
-                import shutil
-                shutil.rmtree(token_dir)
-                print("🗑️  Removed existing tokens")
+            # Remove tokens in both new and legacy locations
+            token_dirs = [get_token_dir(), Path.home() / ".garth"]
+            for tdir in token_dirs:
+                if tdir.exists():
+                    try:
+                        shutil.rmtree(tdir)
+                        print(f"🗑️  Removed tokens at {tdir}")
+                    except Exception as e:
+                        print(f"⚠️  Failed to remove {tdir}: {e}")
             
             # Run setup
             setup_authentication()
