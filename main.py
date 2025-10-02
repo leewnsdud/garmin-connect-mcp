@@ -20,8 +20,15 @@ from utils import (
     meters_per_second_to_pace, calculate_vdot_from_time,
     calculate_training_paces_from_vdot, clear_cache, get_cache_stats,
     DEFAULT_MAX_HR, RUNNING_ACTIVITY_TYPES, DISTANCE_TYPE_IDS,
-    DISTANCE_METERS, GarminAPIError
+    DISTANCE_METERS, GarminAPIError, GarminAuthenticationError,
+    GarminNetworkError, GarminDataNotFoundError, GarminRateLimitError,
+    GarminDeviceRequiredError,
+    encode_cursor, decode_cursor, create_pagination_response,
+    estimate_json_size, is_large_field, split_large_response, response_size_guard
 )
+
+# Import overflow cache
+from cache import OverflowDataCache
 
 load_dotenv()
 
@@ -32,8 +39,29 @@ class GarminConnectMCP:
         self.garmin_client: Optional[Garmin] = None
         self.server = Server("garmin-connect-mcp")
         self.tool_handlers: Dict[str, Any] = {}
+        self._last_auth_time: Optional[datetime] = None
+        self._auth_lock = asyncio.Lock()  # Prevent concurrent authentication attempts
+        self._activity_context: Dict[str, Any] = {}  # Track current activity for overflow
         self._setup_tools()
         self._setup_tool_handlers()
+        self._setup_resources()  # MCP Resources for large data
+
+    def _create_overflow_resource(self, field_name: str, data: Any) -> str:
+        """
+        Create overflow resource URI for large data.
+        Used by response_size_guard decorator.
+        """
+        # Get activity_id from context if available
+        activity_id = self._activity_context.get('activity_id', 'unknown')
+
+        # Store data and get URI
+        import asyncio
+        loop = asyncio.get_event_loop()
+        uri = loop.run_until_complete(
+            OverflowDataCache.store(activity_id, field_name, data)
+        )
+
+        return uri
     
     def _setup_tool_handlers(self):
         """Set up dictionary-based tool handler mapping."""
@@ -64,8 +92,138 @@ class GarminConnectMCP:
             "calculate_vdot_zones": self._calculate_vdot_zones,
             "analyze_threshold_zones": self._analyze_threshold_zones,
             "suggest_daily_workout": self._suggest_daily_workout,
-            "analyze_workout_quality": self._analyze_workout_quality
+            "analyze_workout_quality": self._analyze_workout_quality,
+            "get_endurance_score": self._get_endurance_score,
+            "get_hill_score": self._get_hill_score,
+            "get_hrv_data": self._get_hrv_data,
+            "get_respiration_data": self._get_respiration_data,
+            "get_spo2_data": self._get_spo2_data,
+            # New pagination and device tools
+            "get_paginated_activities": self._get_paginated_activities,
+            "get_activities_for_date": self._get_activities_for_date,
+            "get_devices": self._get_devices,
+            "get_primary_training_device": self._get_primary_training_device,
+            "get_device_settings": self._get_device_settings,
+            "download_activity_file": self._download_activity_file,
+            "get_weekly_running_summary": self._get_weekly_running_summary
         }
+
+    def _setup_resources(self):
+        """Set up MCP Resources for handling large data efficiently."""
+
+        @self.server.list_resources()
+        async def handle_list_resources() -> list[types.Resource]:
+            """
+            List all available resources.
+            Resources are read-only data sources with URIs.
+            """
+            return [
+                types.Resource(
+                    uri="activity://list",
+                    name="Activities List",
+                    description="Paginated list of running activities with cursor-based navigation",
+                    mimeType="application/json"
+                ),
+                types.Resource(
+                    uri="activity://{activity_id}/full",
+                    name="Full Activity Details",
+                    description="Complete activity data including all metrics, charts, and GPS data",
+                    mimeType="application/json"
+                ),
+                types.Resource(
+                    uri="activity://{activity_id}/splits",
+                    name="Activity Splits",
+                    description="Detailed split/lap data for an activity",
+                    mimeType="application/json"
+                ),
+                types.Resource(
+                    uri="activity://{activity_id}/hr-zones",
+                    name="Heart Rate Zones",
+                    description="Heart rate zone distribution and analysis for an activity",
+                    mimeType="application/json"
+                ),
+                types.Resource(
+                    uri="activity://{activity_id}/metrics",
+                    name="Advanced Metrics",
+                    description="Advanced running metrics (cadence, GCT, vertical oscillation, etc.)",
+                    mimeType="application/json"
+                ),
+                types.Resource(
+                    uri="trends://monthly",
+                    name="Monthly Trends",
+                    description="Monthly running trends and statistics with pagination",
+                    mimeType="application/json"
+                )
+            ]
+
+        @self.server.read_resource()
+        async def handle_read_resource(uri: str) -> str:
+            """
+            Read resource content by URI.
+            This is where large data is actually retrieved.
+            """
+            logger.info(f"Reading resource: {uri}")
+
+            try:
+                # Parse URI and route to appropriate handler
+                if uri.startswith("overflow://"):
+                    # Overflow data from large tool responses
+                    cache_id = uri.split("//")[1]
+                    result = await OverflowDataCache.get(cache_id)
+
+                    if result is None:
+                        return json.dumps({
+                            "error": "Overflow data not found or expired",
+                            "uri": uri,
+                            "cache_id": cache_id
+                        })
+
+                    return json.dumps(result, indent=2, ensure_ascii=False)
+
+                elif uri == "activity://list":
+                    # Paginated activities list
+                    result = await self._resource_activities_list()
+
+                elif uri.startswith("activity://") and "/full" in uri:
+                    # Full activity details
+                    activity_id = uri.split("//")[1].split("/")[0]
+                    result = await self._resource_activity_full(activity_id)
+
+                elif uri.startswith("activity://") and "/splits" in uri:
+                    # Activity splits only
+                    activity_id = uri.split("//")[1].split("/")[0]
+                    result = await self._resource_activity_splits(activity_id)
+
+                elif uri.startswith("activity://") and "/hr-zones" in uri:
+                    # Heart rate zones
+                    activity_id = uri.split("//")[1].split("/")[0]
+                    result = await self._resource_activity_hr_zones(activity_id)
+
+                elif uri.startswith("activity://") and "/metrics" in uri:
+                    # Advanced metrics
+                    activity_id = uri.split("//")[1].split("/")[0]
+                    result = await self._resource_activity_metrics(activity_id)
+
+                elif uri.startswith("trends://monthly"):
+                    # Monthly trends
+                    result = await self._resource_monthly_trends(uri)
+
+                else:
+                    return json.dumps({
+                        "error": "Resource not found",
+                        "uri": uri
+                    })
+
+                # Return JSON string
+                import json
+                return json.dumps(result, indent=2, ensure_ascii=False)
+
+            except Exception as e:
+                logger.error(f"Failed to read resource {uri}: {e}")
+                return json.dumps({
+                    "error": f"Failed to read resource: {str(e)}",
+                    "uri": uri
+                })
 
     def _setup_tools(self):
         @self.server.list_tools()
@@ -116,19 +274,23 @@ class GarminConnectMCP:
                 ),
                 types.Tool(
                     name="get_recent_running_activities",
-                    description="Get recent running activities with detailed metrics",
+                    description="Get recent running activities with cursor-based pagination. Returns activities with pagination metadata and resource URIs for detailed data.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "limit": {
                                 "type": "integer",
-                                "description": "Number of activities to retrieve",
-                                "default": 20
+                                "description": "Number of activities per page (default 10)",
+                                "default": 10
                             },
                             "days_back": {
-                                "type": "integer", 
+                                "type": "integer",
                                 "description": "Number of days back to search",
                                 "default": 30
+                            },
+                            "cursor": {
+                                "type": "string",
+                                "description": "Pagination cursor from previous response (optional)"
                             }
                         }
                     }
@@ -150,7 +312,7 @@ class GarminConnectMCP:
                 ),
                 types.Tool(
                     name="get_activity_details",
-                    description="Get comprehensive activity metrics including splits, advanced metrics, and performance data",
+                    description="Get comprehensive activity metrics including splits, advanced metrics, and performance data. Response size optimized for Claude context window.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -158,6 +320,21 @@ class GarminConnectMCP:
                                 "type": "string",
                                 "description": "Garmin activity ID",
                                 "required": True
+                            },
+                            "maxchart": {
+                                "type": "integer",
+                                "description": "Maximum number of chart data points (default 500, reduces data size)",
+                                "default": 500
+                            },
+                            "maxpoly": {
+                                "type": "integer",
+                                "description": "Maximum number of map polyline points (default 1000, reduces data size)",
+                                "default": 1000
+                            },
+                            "include_raw": {
+                                "type": "boolean",
+                                "description": "Include full raw activity details (warning: may be large and cause context window issues)",
+                                "default": False
                             }
                         },
                         "required": ["activity_id"]
@@ -324,14 +501,14 @@ class GarminConnectMCP:
                 ),
                 types.Tool(
                     name="get_running_trends",
-                    description="Get running performance trends over a specified period",
+                    description="Get running performance trends over a specified period. Response size optimized for Claude context window.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "months_back": {
                                 "type": "integer",
-                                "description": "Number of months to analyze",
-                                "default": 6
+                                "description": "Number of months to analyze (default 3, reduced from 6 to avoid context window issues)",
+                                "default": 3
                             }
                         }
                     }
@@ -482,6 +659,178 @@ class GarminConnectMCP:
                         },
                         "required": ["activity_id"]
                     }
+                ),
+                types.Tool(
+                    name="get_endurance_score",
+                    description="Get endurance performance score indicating aerobic endurance capability",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Date in YYYY-MM-DD format, defaults to today",
+                                "default": datetime.now().strftime("%Y-%m-%d")
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_hill_score",
+                    description="Get hill running performance score indicating uphill running capability",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Date in YYYY-MM-DD format, defaults to today",
+                                "default": datetime.now().strftime("%Y-%m-%d")
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_hrv_data",
+                    description="Get detailed heart rate variability (HRV) data for recovery and stress analysis",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Date in YYYY-MM-DD format, defaults to today",
+                                "default": datetime.now().strftime("%Y-%m-%d")
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_respiration_data",
+                    description="Get daily respiration data including breathing rate and patterns",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Date in YYYY-MM-DD format, defaults to today",
+                                "default": datetime.now().strftime("%Y-%m-%d")
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_spo2_data",
+                    description="Get blood oxygen saturation (SpO2) levels throughout the day",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Date in YYYY-MM-DD format, defaults to today",
+                                "default": datetime.now().strftime("%Y-%m-%d")
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_paginated_activities",
+                    description="Get activities with proper pagination support to handle large datasets",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "start": {
+                                "type": "integer",
+                                "description": "Starting index for pagination",
+                                "default": 0
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of activities to retrieve (max 100)",
+                                "default": 20
+                            },
+                            "activity_type": {
+                                "type": "string",
+                                "description": "Filter by activity type (e.g., 'running')",
+                                "default": "running"
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_activities_for_date",
+                    description="Get all activities for a specific date",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "Date in YYYY-MM-DD format",
+                                "required": True
+                            }
+                        },
+                        "required": ["date"]
+                    }
+                ),
+                types.Tool(
+                    name="get_devices",
+                    description="Get information about all connected Garmin devices",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {}
+                    }
+                ),
+                types.Tool(
+                    name="get_primary_training_device",
+                    description="Get primary training device information for running activities",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {}
+                    }
+                ),
+                types.Tool(
+                    name="get_device_settings",
+                    description="Get device settings and configuration",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "device_id": {
+                                "type": "string",
+                                "description": "Device ID (optional, uses primary device if not specified)"
+                            }
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="download_activity_file",
+                    description="Download activity data in various file formats (TCX, GPX, FIT)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "activity_id": {
+                                "type": "string",
+                                "description": "Garmin activity ID",
+                                "required": True
+                            },
+                            "format": {
+                                "type": "string",
+                                "description": "File format: 'tcx', 'gpx', or 'fit'",
+                                "default": "tcx"
+                            }
+                        },
+                        "required": ["activity_id"]
+                    }
+                ),
+                types.Tool(
+                    name="get_weekly_running_summary",
+                    description="Get comprehensive weekly running summary with trends and analysis",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "weeks_back": {
+                                "type": "integer",
+                                "description": "Number of weeks to analyze",
+                                "default": 1
+                            }
+                        }
+                    }
                 )
             ]
 
@@ -489,38 +838,63 @@ class GarminConnectMCP:
         async def handle_call_tool(
             name: str, arguments: dict[str, Any] | None
         ) -> list[types.TextContent]:
-            if not self.garmin_client:
-                await self._authenticate()
-            
+            # Ensure we have a valid authenticated connection
+            await self._ensure_authenticated()
+
             try:
                 # Use dictionary-based dispatch for tool handling
                 handler = self.tool_handlers.get(name)
                 if not handler:
                     raise ValueError(f"Unknown tool: {name}")
-                
+
                 result = await handler(arguments or {})
                 return [types.TextContent(type="text", text=str(result))]
             except Exception as e:
                 logger.error(f"Error calling tool {name}: {e}")
+                # If it's an authentication error, reset the client for next attempt
+                if "authentication" in str(e).lower() or "401" in str(e):
+                    self.garmin_client = None
+                    self._last_auth_time = None
                 return [types.TextContent(type="text", text=f"Error: {str(e)}")]
+
+    async def _ensure_authenticated(self):
+        """Ensure we have a valid authenticated connection, using singleton pattern."""
+        async with self._auth_lock:
+            # Check if we need to authenticate
+            if self.garmin_client is None or self._should_reauthenticate():
+                await self._authenticate()
+                self._last_auth_time = datetime.now()
+
+    def _should_reauthenticate(self) -> bool:
+        """Check if we should reauthenticate (e.g., after 1 hour or on connection issues)."""
+        if self._last_auth_time is None:
+            return True
+        # Re-authenticate every 6 hours as a safety measure
+        hours_since_auth = (datetime.now() - self._last_auth_time).total_seconds() / 3600
+        return hours_since_auth > 6
 
     @with_retry(max_attempts=3, delay=2.0)
     async def _authenticate(self):
+        """Authenticate with Garmin Connect, reusing existing client when possible."""
         username = os.getenv("GARMIN_USERNAME")
         password = os.getenv("GARMIN_PASSWORD")
-        
+
         if not username or not password:
             raise ValueError(
                 "Authentication failed. Please ensure GARMIN_USERNAME and GARMIN_PASSWORD are set in environment variables."
             )
-        
-        self.garmin_client = Garmin(email=username, password=password)
-        
+
+        # Reuse existing client if available, otherwise create new
+        if self.garmin_client is None:
+            self.garmin_client = Garmin(email=username, password=password)
+            logger.debug("Created new Garmin client instance")
+
         # Try to login with stored tokens first
         tokenstore = os.path.expanduser("~/.garminconnect")
         try:
             result = await asyncio.to_thread(self.garmin_client.login, tokenstore)
             logger.info("Successfully authenticated with stored tokens")
+            await self._verify_connection()
         except Exception as token_error:
             logger.info(f"Token login failed: {token_error}")
             # Fallback to credential login
@@ -528,13 +902,25 @@ class GarminConnectMCP:
                 result = await asyncio.to_thread(self.garmin_client.login)
                 if result is True or isinstance(result, tuple):
                     logger.info("Successfully authenticated with credentials")
+                    await self._verify_connection()
                 elif isinstance(result, dict):
                     raise ValueError("Multi-factor authentication required. Please disable 2FA temporarily or use setup script.")
                 else:
                     raise ValueError(f"Unexpected login result: {result}")
             except Exception as cred_error:
                 logger.error(f"Credential login failed: {cred_error}")
+                self.garmin_client = None  # Reset client on failure
                 raise cred_error
+
+    async def _verify_connection(self):
+        """Verify the connection is working by making a simple API call."""
+        try:
+            # Try to get user's display name as a connection test
+            await asyncio.to_thread(self.garmin_client.get_full_name)
+            logger.debug("Connection verified successfully")
+        except Exception as e:
+            logger.warning(f"Connection verification failed: {e}")
+            raise
 
     @handle_api_errors
     @cached(cache_duration_hours=1.0)
@@ -667,21 +1053,48 @@ class GarminConnectMCP:
         }
 
     @handle_api_errors
-    async def _get_recent_running_activities(self, args: Dict[str, Any]) -> List[Dict[str, Any]]:
-        limit = args.get("limit", 20)
+    @cached(cache_type="activities")  # 30 minutes cache
+    async def _get_recent_running_activities(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        limit = args.get("limit", 10)
         days_back = args.get("days_back", 30)
-        
+        cursor = args.get("cursor")  # Support pagination
+
+        # Decode cursor to get offset
+        cursor_data = decode_cursor(cursor) if cursor else None
+        offset = cursor_data.get("offset", 0) if cursor_data else 0
+
         start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         end_date = datetime.now().strftime("%Y-%m-%d")
-        
+
         activities = await asyncio.to_thread(
             self.garmin_client.get_activities_by_date, start_date, end_date
         )
-        
+
         # Filter for running activities only
-        running_activities = filter_running_activities(activities[:limit])
-        
-        return running_activities
+        running_activities = filter_running_activities(activities)
+
+        # Paginate
+        paginated = running_activities[offset:offset + limit]
+
+        # Create next cursor if there are more
+        next_cursor_data = None
+        if len(running_activities) > offset + limit:
+            next_cursor_data = {"offset": offset + limit, "days_back": days_back}
+
+        # Return with pagination metadata
+        response = create_pagination_response(
+            items=paginated,
+            cursor_data=next_cursor_data,
+            page_size=limit
+        )
+
+        # Add resource URI for complete list
+        response["resources"] = {
+            "complete_list": "activity://list",
+            "note": "Use activity://list resource for full paginated access to all activities"
+        }
+
+        return response
 
     @handle_api_errors
     @validate_required_params("activity_id")
@@ -712,25 +1125,40 @@ class GarminConnectMCP:
             "training_effect": {
                 "aerobic": activity_basic.get("aerobicTrainingEffect"),
                 "anaerobic": activity_basic.get("anaerobicTrainingEffect")
-            }
+            },
+            # MCP Resources for large data
+            "resources": {
+                "full_details": f"activity://{activity_id}/full",
+                "splits": f"activity://{activity_id}/splits",
+                "hr_zones": f"activity://{activity_id}/hr-zones",
+                "advanced_metrics": f"activity://{activity_id}/metrics"
+            },
+            "note": "Use resources URIs to access detailed data without context window limits"
         }
-        
+
         return summary
     
     @handle_api_errors
     @validate_required_params("activity_id")
+    @response_size_guard(max_bytes=800_000)
     async def _get_activity_details(self, args: Dict[str, Any]) -> Dict[str, Any]:
         activity_id = args["activity_id"]
-        
-        # Get detailed activity data
+        maxchart = args.get("maxchart", 500)   # Reduced from 1000 to 500
+        maxpoly = args.get("maxpoly", 1000)    # Reduced from 2000 to 1000
+        include_raw = args.get("include_raw", False)  # Option to include full raw data
+
+        # Get detailed activity data with size limits
         try:
             activity_details = await asyncio.to_thread(
-                self.garmin_client.get_activity_details, activity_id
+                self.garmin_client.get_activity_details,
+                activity_id,
+                maxchart,
+                maxpoly
             )
         except Exception as e:
             logger.error(f"Failed to get activity details: {e}")
             activity_details = {}
-        
+
         # Get splits data
         try:
             splits = await asyncio.to_thread(
@@ -738,7 +1166,7 @@ class GarminConnectMCP:
             )
         except:
             splits = None
-        
+
         # Get weather data
         try:
             weather = await asyncio.to_thread(
@@ -746,26 +1174,43 @@ class GarminConnectMCP:
             )
         except:
             weather = None
-        
-        # Extract comprehensive metrics
-        return {
+
+        # Extract only essential metrics from activity_details to reduce response size
+        summary_dto = activity_details.get("summaryDTO", {})
+
+        # Extract comprehensive metrics (simplified)
+        response = {
             "activity_id": activity_id,
-            "detailed_metrics": activity_details,
             "splits": splits,
             "weather": weather,
             "performance_metrics": {
-                "normalized_power": activity_details.get("summaryDTO", {}).get("normalizedPower"),
-                "training_stress_score": activity_details.get("summaryDTO", {}).get("trainingStressScore"),
-                "intensity_factor": activity_details.get("summaryDTO", {}).get("intensityFactor"),
-                "stamina": activity_details.get("summaryDTO", {}).get("stamina"),
-                "estimated_race_predictor": activity_details.get("summaryDTO", {}).get("estimatedRacePredictor")
+                "normalized_power": summary_dto.get("normalizedPower"),
+                "training_stress_score": summary_dto.get("trainingStressScore"),
+                "intensity_factor": summary_dto.get("intensityFactor"),
+                "stamina": summary_dto.get("stamina"),
+                "estimated_race_predictor": summary_dto.get("estimatedRacePredictor")
+            },
+            "summary": {
+                "distance_km": round(summary_dto.get("distance", 0) / 1000, 2) if summary_dto.get("distance") else 0,
+                "duration_seconds": summary_dto.get("duration"),
+                "avg_pace": summary_dto.get("averagePaceInMinutesPerKilometer"),
+                "avg_hr": summary_dto.get("averageHR"),
+                "max_hr": summary_dto.get("maxHR"),
+                "calories": summary_dto.get("calories"),
+                "elevation_gain": summary_dto.get("elevationGain")
             },
             "gps_data_available": activity_details.get("metricDescriptors", []) != [],
-            "note": "Use analyze_heart_rate_zones for heart rate zone analysis"
+            "note": "Use include_raw=true to get full raw data. Use analyze_heart_rate_zones for heart rate zone analysis"
         }
 
+        # Optionally include full raw data if requested
+        if include_raw:
+            response["detailed_metrics"] = activity_details
+
+        return response
+
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="heart_rate")  # 15 minutes cache
     async def _get_heart_rate_metrics(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -811,7 +1256,7 @@ class GarminConnectMCP:
         }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="sleep")  # 2 hours cache
     async def _get_sleep_analysis(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -848,7 +1293,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="body_battery")  # 30 minutes cache
     async def _get_body_battery(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -878,7 +1323,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="stress")  # 15 minutes cache
     async def _get_stress_levels(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -911,7 +1356,8 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_duration_hours=0.5)  # 30 minutes cache for daily activity
+    @response_size_guard(max_bytes=800_000)
     async def _get_daily_activity(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -1036,23 +1482,27 @@ class GarminConnectMCP:
 
     @handle_api_errors
     @validate_required_params("activity_id")
+    @response_size_guard(max_bytes=800_000)  # Auto-protect against large responses
     async def _get_advanced_running_metrics(self, args: Dict[str, Any]) -> Dict[str, Any]:
         activity_id = args["activity_id"]
-        
+
+        # Set context for overflow resource creation
+        self._activity_context['activity_id'] = activity_id
+
         # Get detailed activity data
         activity_details = await asyncio.to_thread(
             self.garmin_client.get_activity_details, activity_id
         )
-        
+
         # Extract advanced running metrics from activity details
         advanced_metrics = {}
-        
+
         # Look for metrics in the detailed data
         if activity_details:
             # Common locations for running dynamics
             summary_dto = activity_details.get('summaryDTO', {})
             metrics_dto = activity_details.get('metricDescriptors', [])
-            
+
             # Extract from summaryDTO
             if summary_dto:
                 if 'avgStrideLength' in summary_dto:
@@ -1067,7 +1517,7 @@ class GarminConnectMCP:
                     advanced_metrics['cadence_spm'] = summary_dto['avgCadence'] * 2  # Convert to steps per minute
                 if 'avgGroundContactBalance' in summary_dto:
                     advanced_metrics['ground_contact_balance_percent'] = summary_dto['avgGroundContactBalance']
-            
+
             # Try to find in other possible locations
             activity_detail_metrics = activity_details.get('activityDetailMetrics', [])
             for metric in activity_detail_metrics:
@@ -1076,16 +1526,27 @@ class GarminConnectMCP:
                     advanced_metrics['cadence_spm'] = metric.get('metricAverage', 0) * 2
                 elif metric_key == 'directAvgStrideLength':
                     advanced_metrics['stride_length_m'] = metric.get('metricAverage', 0) / 100
-        
-        return {
+
+        response = {
             "activity_id": activity_id,
             "advanced_running_metrics": advanced_metrics,
-            "note": "Advanced metrics availability depends on device and activity type",
-            "raw_details": activity_details if not advanced_metrics else None
+            "note": "Advanced metrics availability depends on device and activity type"
         }
+
+        # Always provide full details via Resource instead of inline
+        # This prevents 1MB response size limit issues
+        if activity_details:
+            response["full_details_resource"] = f"activity://{activity_id}/full"
+            response["full_details_note"] = "Use full_details_resource URI to access complete activity_details"
+
+            # Include raw_details ONLY if it's not too large (response_size_guard will handle it)
+            response["raw_details"] = activity_details
+
+        return response
 
     @handle_api_errors
     @validate_required_params("activity_id")
+    @response_size_guard(max_bytes=800_000)
     async def _analyze_heart_rate_zones(self, args: Dict[str, Any]) -> Dict[str, Any]:
         activity_id = args["activity_id"]
         
@@ -1226,30 +1687,30 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_duration_hours=1.0)
     async def _get_running_trends(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        months_back = args.get("months_back", 6)
-        
+        months_back = args.get("months_back", 3)  # Reduced from 6 to 3 months
+
         # Calculate the actual start date based on calendar months
         now = datetime.now()
         current_year = now.year
         current_month = now.month
-        
+
         # Calculate start month/year
         start_month = current_month - months_back
         start_year = current_year
         while start_month <= 0:
             start_month += 12
             start_year -= 1
-        
+
         start_date = f"{start_year}-{start_month:02d}-01"
         end_date = now.strftime("%Y-%m-%d")
-        
+
         activities = await asyncio.to_thread(
             self.garmin_client.get_activities_by_date, start_date, end_date
         )
-        
+
         # Filter running activities
         running_activities = filter_running_activities(activities)
-        
+
         # Calculate monthly trends using actual calendar months
         monthly_trends = []
         for i in range(months_back):
@@ -1259,23 +1720,23 @@ class GarminConnectMCP:
             while target_month <= 0:
                 target_month += 12
                 target_year -= 1
-            
+
             # Get the first and last day of the month
             month_start = datetime(target_year, target_month, 1)
             month_end = datetime(target_year, target_month, monthrange(target_year, target_month)[1], 23, 59, 59)
-            
+
             month_activities = [
                 activity for activity in running_activities
                 if month_start <= datetime.strptime(activity.get("startTimeLocal", "")[:10], "%Y-%m-%d") <= month_end
             ]
-            
+
             if month_activities:
                 avg_distance = sum(activity.get("distance", 0) for activity in month_activities) / len(month_activities) / 1000
                 avg_pace = sum(activity.get("avgSpeed", 0) for activity in month_activities) / len(month_activities)
             else:
                 avg_distance = 0
                 avg_pace = 0
-            
+
             monthly_trends.append({
                 "month": f"{target_year}-{target_month:02d}",
                 "activity_count": len(month_activities),
@@ -1283,7 +1744,7 @@ class GarminConnectMCP:
                 "avg_pace_mps": round(avg_pace, 2),
                 "total_distance_km": round(sum(activity.get("distance", 0) for activity in month_activities) / 1000, 2)
             })
-        
+
         # Calculate overall trends
         if len(monthly_trends) >= 2:
             recent_avg = sum(trend["total_distance_km"] for trend in monthly_trends[:2]) / 2
@@ -1291,18 +1752,20 @@ class GarminConnectMCP:
             distance_trend = "increasing" if recent_avg > earlier_avg else "decreasing"
         else:
             distance_trend = "insufficient_data"
-        
+
         return {
             "analysis_period": f"{months_back} months",
             "monthly_trends": monthly_trends,
             "overall_trends": {
                 "distance_trend": distance_trend,
                 "consistency": "regular" if len(running_activities) > months_back * 4 else "irregular"
-            }
+            },
+            "total_runs": len(running_activities),
+            "note": "Default period reduced to 3 months. Use months_back parameter for longer periods"
         }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_duration_hours=6.0)  # 6 hours cache - changes slowly
     async def _get_lactate_threshold(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -1342,9 +1805,7 @@ class GarminConnectMCP:
                 "date": date,
                 "lactate_threshold": lactate_threshold if lactate_threshold else {
                     "note": "No lactate threshold data found. This requires a compatible Garmin device and sufficient running data."
-                },
-                "raw_training_status": training_status,
-                "raw_max_metrics": max_metrics
+                }
             }
         except Exception as e:
             logger.error(f"Failed to get lactate threshold data: {e}")
@@ -1354,7 +1815,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="race_predictions")  # 12 hours cache
     async def _get_race_predictions(self, args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             # Get race predictions from Garmin
@@ -1412,7 +1873,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="training_readiness")  # 1 hour cache
     async def _get_training_readiness(self, args: Dict[str, Any]) -> Dict[str, Any]:
         date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
         
@@ -1472,7 +1933,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_duration_hours=0.5)  # 30 minutes - changes after activities
     async def _get_recovery_time(self, args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             # Get recovery time from training status
@@ -1522,7 +1983,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_type="training_status")  # 1 hour cache
     async def _get_training_load_balance(self, args: Dict[str, Any]) -> Dict[str, Any]:
         weeks_back = args.get("weeks_back", 6)
         
@@ -1640,7 +2101,7 @@ class GarminConnectMCP:
             }
     
     @handle_api_errors
-    @cached(cache_duration_hours=1.0)
+    @cached(cache_duration_hours=2.0)  # 2 hours - updates with new activities
     async def _get_training_effect(self, args: Dict[str, Any]) -> Dict[str, Any]:
         days_back = args.get("days_back", 7)
         
@@ -2271,24 +2732,737 @@ class GarminConnectMCP:
         
         return takeaways
 
-    async def run(self):
-        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="garmin-connect-mcp",
-                    server_version="0.1.0",
-                    capabilities=self.server.get_capabilities(
-                        notification_options=NotificationOptions(),
-                        experimental_capabilities={},
-                    ),
-                ),
+    @handle_api_errors
+    @cached(cache_duration_hours=1.0)
+    async def _get_endurance_score(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get endurance performance score"""
+        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+        try:
+            endurance_data = await asyncio.to_thread(self.garmin_client.get_endurance_score, date)
+
+            if endurance_data:
+                return {
+                    "endurance_score": endurance_data.get("score"),
+                    "level": endurance_data.get("level"),
+                    "description": endurance_data.get("description"),
+                    "trend": endurance_data.get("trend"),
+                    "date": date
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get endurance score: {e}")
+
+        return {
+            "error": "No endurance score data available",
+            "note": "Endurance score requires compatible Garmin device with running dynamics"
+        }
+
+    @handle_api_errors
+    @cached(cache_duration_hours=1.0)
+    async def _get_hill_score(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get hill running performance score"""
+        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+        try:
+            hill_data = await asyncio.to_thread(self.garmin_client.get_hill_score, date)
+
+            if hill_data:
+                return {
+                    "hill_score": hill_data.get("score"),
+                    "level": hill_data.get("level"),
+                    "description": hill_data.get("description"),
+                    "trend": hill_data.get("trend"),
+                    "date": date
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get hill score: {e}")
+
+        return {
+            "error": "No hill score data available",
+            "note": "Hill score requires compatible Garmin device and elevation data"
+        }
+
+    @handle_api_errors
+    @cached(cache_duration_hours=0.5)  # Shorter cache for HRV data
+    async def _get_hrv_data(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get detailed HRV data"""
+        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+        try:
+            hrv_data = await asyncio.to_thread(self.garmin_client.get_hrv_data, date)
+
+            if hrv_data:
+                return {
+                    "hrv_summary": {
+                        "average_hrv": hrv_data.get("avgHRV"),
+                        "max_hrv": hrv_data.get("maxHRV"),
+                        "min_hrv": hrv_data.get("minHRV"),
+                        "last_night_avg": hrv_data.get("lastNightAvg"),
+                        "last_night_5min_high": hrv_data.get("lastNight5MinHigh"),
+                        "status": hrv_data.get("status"),
+                        "baseline": hrv_data.get("baseline")
+                    },
+                    "hrv_values": hrv_data.get("hrvValues", []),
+                    "date": date
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get HRV data: {e}")
+
+        return {
+            "error": "No HRV data available",
+            "note": "HRV requires compatible device with continuous heart rate monitoring"
+        }
+
+    @handle_api_errors
+    @cached(cache_duration_hours=1.0)
+    async def _get_respiration_data(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get respiration data"""
+        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+        try:
+            respiration = await asyncio.to_thread(self.garmin_client.get_respiration_data, date)
+
+            if respiration:
+                return {
+                    "respiration_summary": {
+                        "avg_sleeping_breath_rate": respiration.get("avgSleepingBreathRate"),
+                        "max_sleeping_breath_rate": respiration.get("maxSleepingBreathRate"),
+                        "min_sleeping_breath_rate": respiration.get("minSleepingBreathRate"),
+                        "avg_waking_breath_rate": respiration.get("avgWakingBreathRate"),
+                        "max_waking_breath_rate": respiration.get("maxWakingBreathRate"),
+                        "min_waking_breath_rate": respiration.get("minWakingBreathRate")
+                    },
+                    "respiration_timeline": respiration.get("breathingValues", []),
+                    "date": date
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get respiration data: {e}")
+
+        return {
+            "error": "No respiration data available",
+            "note": "Respiration data requires compatible Garmin device"
+        }
+
+    @handle_api_errors
+    @cached(cache_duration_hours=2.0)  # Longer cache for SpO2 as it changes slowly
+    async def _get_spo2_data(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get SpO2 (blood oxygen) data"""
+        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+        try:
+            spo2_data = await asyncio.to_thread(self.garmin_client.get_spo2_data, date)
+
+            if spo2_data:
+                return {
+                    "spo2_summary": {
+                        "avg_spo2": spo2_data.get("avgSpO2"),
+                        "min_spo2": spo2_data.get("minSpO2"),
+                        "max_spo2": spo2_data.get("maxSpO2"),
+                        "last_measurement": spo2_data.get("lastMeasurement")
+                    },
+                    "spo2_readings": spo2_data.get("spO2Values", []),
+                    "date": date
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get SpO2 data: {e}")
+
+        return {
+            "error": "No SpO2 data available",
+            "note": "SpO2 requires compatible Garmin device with pulse oximeter"
+        }
+
+    @handle_api_errors
+    @cached(cache_type="activities", cache_duration_hours=0.25)  # 15 minutes cache
+    @response_size_guard(max_bytes=800_000)
+    async def _get_paginated_activities(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get activities with pagination to handle large datasets."""
+        start = min(args.get("start", 0), 1000)  # Limit max start index
+        limit = min(args.get("limit", 20), 100)  # Max 100 per request
+        activity_type = args.get("activity_type", "running")
+
+        try:
+            # Use the proper get_activities method with pagination
+            activities = await asyncio.to_thread(
+                self.garmin_client.get_activities,
+                start,
+                limit,
+                activity_type if activity_type != "all" else None
             )
 
+            # Filter for running activities if specified
+            if activity_type == "running":
+                activities = filter_running_activities(activities)
+
+            return {
+                "activities": activities,
+                "pagination": {
+                    "start": start,
+                    "limit": limit,
+                    "returned": len(activities),
+                    "has_more": len(activities) == limit
+                }
+            }
+        except Exception as e:
+            logger.error(f"Failed to get paginated activities: {e}")
+            # Fallback to date-based retrieval
+            return await self._get_recent_running_activities({
+                "limit": limit,
+                "days_back": 30
+            })
+
+    @handle_api_errors
+    @cached(cache_type="activities", cache_duration_hours=0.5)
+    @validate_required_params("date")
+    async def _get_activities_for_date(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get all activities for a specific date."""
+        date = args["date"]
+
+        try:
+            activities = await asyncio.to_thread(
+                self.garmin_client.get_activities_fordate,
+                date
+            )
+
+            # Separate running and other activities
+            running_activities = filter_running_activities(activities)
+            other_activities = [a for a in activities if a not in running_activities]
+
+            return {
+                "date": date,
+                "total_activities": len(activities),
+                "running_activities": running_activities,
+                "other_activities": other_activities,
+                "summary": {
+                    "total_running_distance_km": sum(
+                        a.get("distance", 0) / 1000
+                        for a in running_activities
+                    ),
+                    "total_running_duration_minutes": sum(
+                        a.get("duration", 0) / 60
+                        for a in running_activities
+                    )
+                }
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get activities for date: {e}")
+            # Fallback to date range query
+            return await self._get_recent_running_activities({
+                "limit": 50,
+                "days_back": 1
+            })
+
+    @handle_api_errors
+    @cached(cache_duration_hours=6.0)  # Device info doesn't change often
+    @response_size_guard(max_bytes=800_000)
+    async def _get_devices(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get information about all connected Garmin devices."""
+        try:
+            devices = await asyncio.to_thread(self.garmin_client.get_devices)
+
+            # Extract key device information
+            device_list = []
+            for device in devices or []:
+                device_info = {
+                    "device_id": device.get("deviceId"),
+                    "device_name": device.get("deviceName"),
+                    "product_name": device.get("productDisplayName"),
+                    "serial_number": device.get("serialNumber"),
+                    "software_version": device.get("softwareVersion"),
+                    "unit_id": device.get("unitId"),
+                    "battery_status": device.get("batteryStatus"),
+                    "last_sync": device.get("lastSyncTime")
+                }
+                device_list.append(device_info)
+
+            return {
+                "devices": device_list,
+                "device_count": len(device_list)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get devices: {e}")
+            return {
+                "error": "Could not retrieve device information",
+                "note": "Device API may not be available"
+            }
+
+    @handle_api_errors
+    @cached(cache_duration_hours=6.0)
+    async def _get_primary_training_device(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get primary training device information."""
+        try:
+            devices = await asyncio.to_thread(self.garmin_client.get_devices)
+
+            # Find primary device (usually the first or most recently synced)
+            primary_device = None
+            if devices:
+                # Sort by last sync time if available
+                sorted_devices = sorted(
+                    devices,
+                    key=lambda d: d.get("lastSyncTime", ""),
+                    reverse=True
+                )
+                primary_device = sorted_devices[0] if sorted_devices else None
+
+            if primary_device:
+                return {
+                    "primary_device": {
+                        "device_id": primary_device.get("deviceId"),
+                        "device_name": primary_device.get("deviceName"),
+                        "product_name": primary_device.get("productDisplayName"),
+                        "supports_running_dynamics": self._check_running_dynamics_support(
+                            primary_device.get("productDisplayName", "")
+                        ),
+                        "last_sync": primary_device.get("lastSyncTime")
+                    }
+                }
+
+            return {"error": "No primary device found"}
+        except Exception as e:
+            logger.error(f"Failed to get primary device: {e}")
+            return {"error": "Could not determine primary device"}
+
+    def _check_running_dynamics_support(self, product_name: str) -> bool:
+        """Check if device supports running dynamics."""
+        # Devices known to support running dynamics
+        running_dynamics_devices = [
+            "forerunner", "fenix", "epix", "enduro",
+            "marq", "tactix", "quatix", "descent"
+        ]
+        return any(device in product_name.lower() for device in running_dynamics_devices)
+
+    @handle_api_errors
+    @cached(cache_duration_hours=6.0)
+    async def _get_device_settings(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get device settings and configuration."""
+        device_id = args.get("device_id")
+
+        try:
+            if not device_id:
+                # Get primary device if no device_id specified
+                primary = await self._get_primary_training_device({})
+                if "primary_device" in primary:
+                    device_id = primary["primary_device"]["device_id"]
+                else:
+                    return {"error": "No device specified and could not determine primary device"}
+
+            # Get device settings
+            settings = await asyncio.to_thread(
+                self.garmin_client.get_device_settings,
+                device_id
+            )
+
+            return {
+                "device_id": device_id,
+                "settings": settings
+            }
+        except Exception as e:
+            logger.error(f"Failed to get device settings: {e}")
+            return {"error": f"Could not retrieve settings for device {device_id}"}
+
+    @handle_api_errors
+    @validate_required_params("activity_id")
+    async def _download_activity_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Download activity in specified file format."""
+        activity_id = args["activity_id"]
+        file_format = args.get("format", "tcx").lower()
+
+        # Validate format
+        valid_formats = ["tcx", "gpx", "fit", "csv"]
+        if file_format not in valid_formats:
+            return {
+                "error": f"Invalid format. Must be one of: {', '.join(valid_formats)}"
+            }
+
+        try:
+            # Map format to garminconnect method format codes
+            format_map = {
+                "tcx": "tcx",
+                "gpx": "gpx",
+                "fit": "original",
+                "csv": "csv"
+            }
+
+            file_data = await asyncio.to_thread(
+                self.garmin_client.download_activity,
+                activity_id,
+                format_map[file_format]
+            )
+
+            # For binary formats (FIT), we need to handle differently
+            if file_format == "fit":
+                return {
+                    "activity_id": activity_id,
+                    "format": file_format,
+                    "data_type": "binary",
+                    "note": "FIT file data retrieved successfully",
+                    "size_bytes": len(file_data) if file_data else 0
+                }
+            else:
+                # Text-based formats
+                return {
+                    "activity_id": activity_id,
+                    "format": file_format,
+                    "data": file_data if isinstance(file_data, str) else str(file_data),
+                    "data_type": "text",
+                    "size_bytes": len(file_data) if file_data else 0
+                }
+        except Exception as e:
+            logger.error(f"Failed to download activity file: {e}")
+            return {
+                "error": f"Could not download activity {activity_id} in {file_format} format",
+                "details": str(e)
+            }
+
+    @handle_api_errors
+    @cached(cache_duration_hours=0.5)  # 30 minutes cache
+    async def _get_weekly_running_summary(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Get comprehensive weekly running summary with analysis."""
+        weeks_back = args.get("weeks_back", 1)
+
+        summaries = []
+        for week in range(weeks_back):
+            # Calculate week date range
+            end_date = datetime.now() - timedelta(weeks=week)
+            start_date = end_date - timedelta(days=7)
+
+            # Get activities for the week
+            activities = await asyncio.to_thread(
+                self.garmin_client.get_activities_by_date,
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d")
+            )
+
+            # Filter for running activities
+            running_activities = filter_running_activities(activities)
+
+            # Calculate weekly metrics
+            total_distance = sum(a.get("distance", 0) for a in running_activities) / 1000
+            total_duration = sum(a.get("duration", 0) for a in running_activities) / 3600
+            run_count = len(running_activities)
+
+            # Calculate average pace
+            avg_pace = None
+            if total_distance > 0 and total_duration > 0:
+                avg_pace_seconds = (total_duration * 3600) / total_distance
+                avg_pace = format_pace(avg_pace_seconds)
+
+            # Find longest run
+            longest_run = max(
+                (a.get("distance", 0) / 1000 for a in running_activities),
+                default=0
+            )
+
+            # Calculate elevation gain
+            total_elevation = sum(
+                a.get("elevationGain", 0) for a in running_activities
+            )
+
+            week_summary = {
+                "week_start": start_date.strftime("%Y-%m-%d"),
+                "week_end": end_date.strftime("%Y-%m-%d"),
+                "total_runs": run_count,
+                "total_distance_km": round(total_distance, 2),
+                "total_duration_hours": round(total_duration, 2),
+                "average_pace_per_km": avg_pace,
+                "longest_run_km": round(longest_run, 2),
+                "total_elevation_gain_m": round(total_elevation, 1),
+                "average_run_distance_km": round(total_distance / run_count, 2) if run_count > 0 else 0,
+                "activities": [
+                    {
+                        "date": a.get("startTimeLocal"),
+                        "distance_km": round(a.get("distance", 0) / 1000, 2),
+                        "duration_minutes": round(a.get("duration", 0) / 60, 1),
+                        "pace_per_km": format_pace(
+                            (a.get("duration", 0) / a.get("distance", 1)) * 1000
+                        ) if a.get("distance", 0) > 0 else None
+                    }
+                    for a in running_activities[:10]  # Limit to 10 activities per week
+                ]
+            }
+
+            summaries.append(week_summary)
+
+        # Calculate trends if multiple weeks
+        trends = None
+        if len(summaries) >= 2:
+            current_week = summaries[0]
+            previous_week = summaries[1]
+
+            trends = {
+                "distance_change_km": round(
+                    current_week["total_distance_km"] - previous_week["total_distance_km"],
+                    2
+                ),
+                "distance_change_percent": round(
+                    ((current_week["total_distance_km"] - previous_week["total_distance_km"]) /
+                     max(previous_week["total_distance_km"], 1)) * 100,
+                    1
+                ),
+                "run_count_change": current_week["total_runs"] - previous_week["total_runs"]
+            }
+
+        return {
+            "weekly_summaries": summaries,
+            "trends": trends,
+            "analysis_period": f"{weeks_back} week(s)"
+        }
+
+    # ============================================================================
+    # MCP Resource Handlers (for large data with pagination)
+    # ============================================================================
+
+    async def _resource_activities_list(self, cursor: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
+        """
+        Resource handler for paginated activities list.
+        URI: activity://list?cursor={cursor}&limit={limit}
+        """
+        await self._authenticate()
+
+        # Decode cursor to get offset
+        cursor_data = decode_cursor(cursor) if cursor else None
+        offset = cursor_data.get("offset", 0) if cursor_data else 0
+
+        # Get activities
+        start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        end_date = datetime.now().strftime("%Y-%m-%d")
+
+        activities = await asyncio.to_thread(
+            self.garmin_client.get_activities_by_date, start_date, end_date
+        )
+
+        # Filter running activities
+        running_activities = filter_running_activities(activities)
+
+        # Paginate
+        paginated = running_activities[offset:offset + limit]
+
+        # Create next cursor if there are more
+        next_cursor_data = None
+        if len(running_activities) > offset + limit:
+            next_cursor_data = {"offset": offset + limit}
+
+        return create_pagination_response(
+            items=paginated,
+            cursor_data=next_cursor_data,
+            page_size=limit
+        )
+
+    async def _resource_activity_full(self, activity_id: str) -> Dict[str, Any]:
+        """
+        Resource handler for full activity details (no size limits).
+        URI: activity://{activity_id}/full
+        """
+        await self._authenticate()
+
+        # Get all activity data without restrictions
+        activity_details = await asyncio.to_thread(
+            self.garmin_client.get_activity_details,
+            activity_id,
+            2000,  # Full chart data
+            4000   # Full polyline data
+        )
+
+        # Get splits
+        try:
+            splits = await asyncio.to_thread(
+                self.garmin_client.get_activity_splits, activity_id
+            )
+        except:
+            splits = None
+
+        # Get weather
+        try:
+            weather = await asyncio.to_thread(
+                self.garmin_client.get_activity_weather, activity_id
+            )
+        except:
+            weather = None
+
+        return {
+            "activity_id": activity_id,
+            "full_details": activity_details,
+            "splits": splits,
+            "weather": weather,
+            "note": "Complete activity data with no size limits"
+        }
+
+    async def _resource_activity_splits(self, activity_id: str) -> Dict[str, Any]:
+        """
+        Resource handler for activity splits only.
+        URI: activity://{activity_id}/splits
+        """
+        await self._authenticate()
+
+        splits = await asyncio.to_thread(
+            self.garmin_client.get_activity_splits, activity_id
+        )
+
+        return {
+            "activity_id": activity_id,
+            "splits": splits
+        }
+
+    async def _resource_activity_hr_zones(self, activity_id: str) -> Dict[str, Any]:
+        """
+        Resource handler for heart rate zone analysis.
+        URI: activity://{activity_id}/hr-zones
+        """
+        await self._authenticate()
+
+        # Get HR time in zones
+        try:
+            hr_time_in_zones = await asyncio.to_thread(
+                self.garmin_client.get_activity_hr_in_timezones, activity_id
+            )
+        except:
+            hr_time_in_zones = None
+
+        # Get user's heart rate zones configuration
+        try:
+            hr_zones_config = await asyncio.to_thread(self.garmin_client.get_heart_rate_zones)
+        except:
+            hr_zones_config = None
+
+        # Process zone distribution
+        zone_analysis = {}
+        if hr_time_in_zones and isinstance(hr_time_in_zones, list):
+            total_time = sum(zone.get('secsInZone', 0) for zone in hr_time_in_zones)
+
+            for i, zone in enumerate(hr_time_in_zones):
+                zone_time = zone.get('secsInZone', 0)
+                zone_name = zone.get('zoneName', f'Zone {i+1}')
+                percentage = (zone_time / total_time * 100) if total_time > 0 else 0
+
+                zone_analysis[zone_name] = {
+                    "time_seconds": zone_time,
+                    "time_minutes": round(zone_time / 60, 1),
+                    "percentage": round(percentage, 1),
+                    "min_hr": zone.get('startValue'),
+                    "max_hr": zone.get('endValue')
+                }
+
+        return {
+            "activity_id": activity_id,
+            "hr_zones_config": hr_zones_config,
+            "zone_distribution": zone_analysis,
+            "raw_time_in_zones": hr_time_in_zones
+        }
+
+    async def _resource_activity_metrics(self, activity_id: str) -> Dict[str, Any]:
+        """
+        Resource handler for advanced running metrics.
+        URI: activity://{activity_id}/metrics
+        """
+        await self._authenticate()
+
+        activity_details = await asyncio.to_thread(
+            self.garmin_client.get_activity_details, activity_id
+        )
+
+        # Extract advanced running metrics
+        advanced_metrics = {}
+
+        if 'metricDescriptors' in activity_details:
+            for descriptor in activity_details['metricDescriptors']:
+                metric_key = descriptor.get('key')
+                if metric_key in ['avgVerticalOscillation', 'avgGroundContactTime',
+                                 'avgStrideLength', 'avgVerticalRatio',
+                                 'trainingEffect', 'aerobicTrainingEffect',
+                                 'anaerobicTrainingEffect']:
+                    advanced_metrics[metric_key] = descriptor
+
+        return {
+            "activity_id": activity_id,
+            "advanced_metrics": advanced_metrics,
+            "full_metric_descriptors": activity_details.get('metricDescriptors', [])
+        }
+
+    async def _resource_monthly_trends(self, uri: str) -> Dict[str, Any]:
+        """
+        Resource handler for monthly trends with pagination.
+        URI: trends://monthly?cursor={cursor}&months={months}
+        """
+        await self._authenticate()
+
+        # Parse query parameters from URI
+        import urllib.parse
+        parsed = urllib.parse.urlparse(uri)
+        params = urllib.parse.parse_qs(parsed.query)
+
+        cursor = params.get('cursor', [None])[0]
+        months = int(params.get('months', ['6'])[0])
+
+        cursor_data = decode_cursor(cursor) if cursor else None
+        offset = cursor_data.get("offset", 0) if cursor_data else 0
+
+        # Calculate date range
+        now = datetime.now()
+        start_month = now.month - months
+        start_year = now.year
+        while start_month <= 0:
+            start_month += 12
+            start_year -= 1
+
+        start_date = f"{start_year}-{start_month:02d}-01"
+        end_date = now.strftime("%Y-%m-%d")
+
+        activities = await asyncio.to_thread(
+            self.garmin_client.get_activities_by_date, start_date, end_date
+        )
+
+        running_activities = filter_running_activities(activities)
+
+        # Group by month
+        monthly_data = {}
+        for activity in running_activities:
+            month_key = activity.get("startTimeLocal", "")[:7]  # YYYY-MM
+            if month_key not in monthly_data:
+                monthly_data[month_key] = []
+            monthly_data[month_key].append(activity)
+
+        # Calculate statistics
+        trends = []
+        for month, month_activities in sorted(monthly_data.items(), reverse=True):
+            total_distance = sum(a.get("distance", 0) for a in month_activities) / 1000
+            avg_pace = sum(a.get("avgSpeed", 0) for a in month_activities) / len(month_activities) if month_activities else 0
+
+            trends.append({
+                "month": month,
+                "runs": len(month_activities),
+                "total_distance_km": round(total_distance, 2),
+                "avg_pace_mps": round(avg_pace, 2)
+            })
+
+        # Paginate
+        page_size = 12  # 1 year
+        paginated = trends[offset:offset + page_size]
+        next_cursor_data = {"offset": offset + page_size} if len(trends) > offset + page_size else None
+
+        return create_pagination_response(
+            items=paginated,
+            cursor_data=next_cursor_data,
+            page_size=page_size
+        )
+
+
 async def main():
+    """Main entry point for the MCP server."""
     mcp_server = GarminConnectMCP()
-    await mcp_server.run()
+
+    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+        await mcp_server.server.run(
+            read_stream,
+            write_stream,
+            InitializationOptions(
+                server_name="garmin-connect-mcp",
+                server_version="1.0.0",
+                capabilities=mcp_server.server.get_capabilities(
+                    notification_options=NotificationOptions(),
+                    experimental_capabilities={}
+                )
+            )
+        )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

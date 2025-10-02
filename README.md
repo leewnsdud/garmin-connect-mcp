@@ -93,9 +93,9 @@ uv run python setup_claude_desktop.py
 }
 ```
 
-## 사용 가능한 도구 (총 27개)
+## 사용 가능한 도구 (총 39개)
 
-### 🏃 퍼포먼스 분석 (7개)
+### 🏃 퍼포먼스 분석 (9개)
 
 #### get_personal_records
 개인 최고 기록을 조회합니다.
@@ -258,7 +258,39 @@ uv run python setup_claude_desktop.py
 }
 ```
 
-### 📊 활동 데이터 (3개)
+#### get_endurance_score
+유산소 지구력 능력을 나타내는 지구력 점수를 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "endurance_score": {
+    "score": 68,
+    "level": "good",
+    "percentile": 75,
+    "description": "Your endurance capability for sustained aerobic efforts"
+  },
+  "date": "2024-12-29"
+}
+```
+
+#### get_hill_score
+언덕 오르기 능력을 나타내는 힐 스코어를 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "hill_score": {
+    "score": 72,
+    "level": "very_good",
+    "percentile": 80,
+    "description": "Your uphill running capability and power"
+  },
+  "date": "2024-12-29"
+}
+```
+
+### 📊 활동 데이터 (4개)
 
 #### get_recent_running_activities
 최근 러닝 활동 목록을 조회합니다.
@@ -327,7 +359,29 @@ uv run python setup_claude_desktop.py
 }
 ```
 
-### 💓 건강 지표 (5개)
+#### get_weekly_running_summary
+주간 러닝 요약 정보와 트렌드를 제공합니다.
+
+**응답 예시:**
+```json
+{
+  "week_summary": {
+    "total_distance_km": 45.5,
+    "total_time_hours": 4.2,
+    "total_elevation_gain_m": 380,
+    "average_pace_per_km": "5:30",
+    "activity_count": 5
+  },
+  "weekly_trend": {
+    "distance_change_percent": 8.5,
+    "pace_improvement": true,
+    "consistency_score": 85
+  },
+  "week_period": "2024-12-23 to 2024-12-29"
+}
+```
+
+### 💓 건강 지표 (8개)
 
 #### get_heart_rate_metrics
 안정시 심박수와 HRV 데이터를 조회합니다.
@@ -421,6 +475,69 @@ uv run python setup_claude_desktop.py
     "calories_burned": 2850,
     "distance_km": 9.2
   }
+}
+```
+
+#### get_hrv_data
+상세한 심박변이도(HRV) 데이터를 조회하여 회복 및 스트레스 상태를 분석합니다.
+
+**응답 예시:**
+```json
+{
+  "hrv_summary": {
+    "daily_rmssd": 45,
+    "weekly_avg": 42,
+    "status": "balanced",
+    "trend": "improving"
+  },
+  "hrv_readings": [
+    {
+      "timestamp": "2024-12-29 07:00",
+      "value": 45,
+      "quality": "good"
+    }
+  ],
+  "date": "2024-12-29"
+}
+```
+
+#### get_respiration_data
+하루 동안의 호흡수 데이터 및 패턴을 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "respiration_summary": {
+    "daily_avg_breaths_per_min": 14,
+    "sleep_avg_breaths_per_min": 12,
+    "awake_avg_breaths_per_min": 15,
+    "highest_breaths_per_min": 22,
+    "lowest_breaths_per_min": 10
+  },
+  "date": "2024-12-29"
+}
+```
+
+#### get_spo2_data
+하루 동안의 혈중 산소 포화도(SpO2) 수준을 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "spo2_summary": {
+    "daily_avg_spo2": 96,
+    "sleep_avg_spo2": 95,
+    "lowest_spo2": 92,
+    "highest_spo2": 98
+  },
+  "spo2_readings": [
+    {
+      "timestamp": "2024-12-29 23:00",
+      "value": 95,
+      "reading_type": "sleep"
+    }
+  ],
+  "date": "2024-12-29"
 }
 ```
 
@@ -667,7 +784,7 @@ VDOT 기반 정확한 훈련 구간을 계산합니다.
 }
 ```
 
-### 🎯 기타 도구 (3개)
+### 📊 고급 메트릭 분석 (2개)
 
 #### analyze_heart_rate_zones
 활동 중 심박수 구간 분포를 분석합니다.
@@ -686,7 +803,7 @@ VDOT 기반 정확한 훈련 구간을 계산합니다.
 ```
 
 #### get_advanced_running_metrics
-러닝 다이나믹스 데이터를 조회합니다.
+러닝 다이나믹스 데이터를 조회합니다. (Running Dynamics를 지원하는 디바이스 필요)
 
 **응답 예시:**
 ```json
@@ -698,12 +815,163 @@ VDOT 기반 정확한 훈련 구간을 계산합니다.
     "ground_contact_time_ms": 245,
     "cadence_spm": 180,
     "ground_contact_balance_percent": 50.2
+  },
+  "device_support": {
+    "running_dynamics_supported": true,
+    "device_name": "Forerunner 965"
   }
 }
 ```
 
+### 📱 디바이스 관리 (3개)
+
+#### get_devices
+연결된 모든 Garmin 디바이스 정보를 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "devices": [
+    {
+      "device_id": "123456789",
+      "product_name": "Forerunner 965",
+      "device_type": "running_watch",
+      "last_sync": "2024-12-29 18:30",
+      "battery_status": "good",
+      "software_version": "20.26"
+    },
+    {
+      "device_id": "987654321",
+      "product_name": "HRM-Pro",
+      "device_type": "heart_rate_monitor",
+      "last_sync": "2024-12-29 07:00"
+    }
+  ],
+  "total_devices": 2
+}
+```
+
+#### get_primary_training_device
+러닝 활동에 사용되는 주요 디바이스 정보를 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "primary_device": {
+    "device_id": "123456789",
+    "product_name": "Forerunner 965",
+    "model": "fenix7",
+    "capabilities": {
+      "running_dynamics": true,
+      "vo2_max": true,
+      "training_status": true,
+      "race_predictor": true
+    },
+    "last_used": "2024-12-29 07:00"
+  }
+}
+```
+
+#### get_device_settings
+디바이스 설정 및 구성 정보를 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "device_settings": {
+    "heart_rate_zones": {
+      "zone1_max": 135,
+      "zone2_max": 152,
+      "zone3_max": 169,
+      "zone4_max": 186,
+      "zone5_max": 202
+    },
+    "user_profile": {
+      "max_hr": 190,
+      "resting_hr": 48,
+      "lactate_threshold_hr": 165
+    },
+    "data_recording": {
+      "gps_mode": "smart",
+      "recording_interval": "every_second"
+    }
+  }
+}
+```
+
+### 💾 데이터 관리 (4개)
+
+#### get_paginated_activities
+페이지네이션을 지원하여 대량의 활동 데이터를 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "activities": [
+    {
+      "activity_id": "12345678",
+      "activity_name": "Morning Run",
+      "start_time": "2024-12-29 07:00",
+      "distance_km": 10.5,
+      "duration_seconds": 3150
+    }
+  ],
+  "pagination": {
+    "total_count": 150,
+    "current_page": 1,
+    "total_pages": 8,
+    "has_more": true
+  }
+}
+```
+
+#### get_activities_for_date
+특정 날짜의 모든 활동을 조회합니다.
+
+**응답 예시:**
+```json
+{
+  "date": "2024-12-29",
+  "activities": [
+    {
+      "activity_id": "12345678",
+      "activity_type": "running",
+      "start_time": "07:00",
+      "distance_km": 10.5,
+      "duration": "52:30"
+    },
+    {
+      "activity_id": "12345679",
+      "activity_type": "strength_training",
+      "start_time": "18:00",
+      "duration": "45:00"
+    }
+  ],
+  "total_activities": 2
+}
+```
+
+#### download_activity_file
+활동 데이터를 다양한 파일 형식(TCX, GPX, FIT)으로 다운로드합니다.
+
+**응답 예시:**
+```json
+{
+  "activity_id": "12345678",
+  "file_format": "tcx",
+  "file_size_bytes": 125000,
+  "download_url": "file://activities/12345678.tcx",
+  "downloaded": true,
+  "message": "Activity file downloaded successfully"
+}
+```
+
+**참고:** 이 tool은 파일을 로컬에 저장하고 경로를 반환합니다.
+
+### 🎯 목표 설정 (1개)
+
 #### set_race_goal
-레이스 목표를 설정하고 훈련 단계를 추천합니다.
+레이스 목표를 설정하고 훈련 계획을 수립합니다.
 
 **응답 예시:**
 ```json
@@ -717,7 +985,9 @@ VDOT 기반 정확한 훈련 구간을 계산합니다.
   },
   "training_recommendation": {
     "phase": "build",
-    "note": "Training phase based on time remaining until race"
+    "weeks_until_race": 10,
+    "recommended_weekly_volume": "50-60 km",
+    "key_workouts": ["Long run", "Tempo run", "Interval training"]
   }
 }
 ```
