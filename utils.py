@@ -6,9 +6,9 @@ import base64
 import functools
 import json
 import logging
-import time
+from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +401,390 @@ def calculate_training_paces_from_vdot(vdot: float) -> Dict[str, Dict[str, Any]]
             }
     
     return training_paces
+
+# ============================================================================
+# Training Plan Utilities
+# ============================================================================
+
+def _normalize_distance_to_km(value: Any) -> Optional[float]:
+    """Best-effort conversion of distance representations to kilometers."""
+    if value is None:
+        return None
+
+    if isinstance(value, dict):
+        # Prefer common distance fields first
+        preferred_keys = [
+            "distanceMeters",
+            "plannedDistanceMeters",
+            "plannedDistance",
+            "totalDistance",
+            "distance",
+            "goalDistance",
+            "targetDistance",
+        ]
+        for key in preferred_keys:
+            if key in value:
+                dist = _normalize_distance_to_km(value.get(key))
+                if dist is not None:
+                    return dist
+        # Fallback: scan nested values
+        for nested in value.values():
+            dist = _normalize_distance_to_km(nested)
+            if dist is not None:
+                return dist
+        return None
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            dist = _normalize_distance_to_km(item)
+            if dist is not None:
+                return dist
+        return None
+
+    if isinstance(value, (int, float)):
+        num = float(value)
+        if num <= 0:
+            return None
+        # Heuristic: values above 1000 are likely meters
+        if num >= 1000:
+            return round(num / 1000.0, 2)
+        # Values <= 200 are assumed to already be in kilometers
+        if num <= 200:
+            return round(num, 2)
+
+    return None
+
+
+def _summarize_training_workout(workout: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract high-level information from a training plan workout."""
+    if not isinstance(workout, dict):
+        return {}
+
+    distance_km = _normalize_distance_to_km(
+        workout.get("plannedDistance")
+        or workout.get("plannedDistanceMeters")
+        or workout.get("distance")
+        or workout.get("distanceMeters")
+    )
+
+    summary = {
+        "id": workout.get("trainingPlanWorkoutId") or workout.get("workoutId"),
+        "name": workout.get("workoutName") or workout.get("name"),
+        "sport": workout.get("sportType") or workout.get("primarySport"),
+        "focus": workout.get("focus") or workout.get("purpose") or workout.get("trainingGoal"),
+        "intensity": workout.get("intensityLevel") or workout.get("difficulty"),
+        "distance_km": distance_km,
+        "duration_target": workout.get("duration") or workout.get("durationGoal"),
+    }
+
+    # Include segment count if available (helps understand workout complexity)
+    for key in ("segments", "steps", "workoutSteps"):
+        segments = workout.get(key)
+        if isinstance(segments, list):
+            summary["segments"] = len(segments)
+            break
+
+    return summary
+
+
+def _extract_key_workouts_from_week(week: Dict[str, Any], limit: int = 3) -> List[Dict[str, Any]]:
+    """Select representative workouts from a week object."""
+    candidates = None
+    if isinstance(week, dict):
+        for key in ("keyWorkouts", "highlightWorkouts", "featuredWorkouts", "workouts"):
+            value = week.get(key)
+            if isinstance(value, list) and value:
+                candidates = value
+                break
+
+    if not candidates:
+        return []
+
+    workouts: List[Dict[str, Any]] = []
+    for workout in candidates[:limit]:
+        summary = _summarize_training_workout(workout)
+        if summary:
+            workouts.append(summary)
+    return workouts
+
+
+def _infer_week_distance_km(week: Dict[str, Any], workouts: List[Dict[str, Any]]) -> Optional[float]:
+    """Determine planned weekly distance from explicit fields or aggregated workouts."""
+    if isinstance(week, dict):
+        for key in ("plannedDistance", "plannedDistanceMeters", "totalDistance", "distance"):
+            dist = _normalize_distance_to_km(week.get(key))
+            if dist is not None:
+                return dist
+
+    distances = [
+        w.get("distance_km") for w in workouts if isinstance(w.get("distance_km"), (int, float))
+    ]
+    if distances:
+        return round(sum(distances), 2)
+
+    return None
+
+
+def build_training_plan_schedule_preview(
+    plan_detail: Dict[str, Any],
+    weeks: int = 4
+) -> Dict[str, Any]:
+    """
+    Build a compact weekly schedule preview for a training plan.
+
+    Args:
+        plan_detail: Training plan detail payload from Garmin Connect.
+        weeks: Number of weeks to include in the preview.
+
+    Returns:
+        Dictionary containing weekly summaries.
+    """
+    if weeks <= 0:
+        weeks = 1
+
+    preview: List[Dict[str, Any]] = []
+    total_weeks = (
+        plan_detail.get("planSummary", {}).get("durationWeeks")
+        or plan_detail.get("durationWeeks")
+        or plan_detail.get("planLengthInWeeks")
+    )
+
+    week_sources = (
+        plan_detail.get("trainingPlanWeekSummaries")
+        or plan_detail.get("weeks")
+        or plan_detail.get("planWeeks")
+    )
+
+    if isinstance(week_sources, list) and week_sources:
+        for idx, week in enumerate(week_sources[:weeks], start=1):
+            week_number = (
+                week.get("weekNumber")
+                or week.get("week")
+                or week.get("weekIndex")
+                or idx
+            )
+            key_workouts = _extract_key_workouts_from_week(week)
+            preview.append(
+                {
+                    "week": int(week_number),
+                    "focus": week.get("focus") or week.get("phaseName") or week.get("theme"),
+                    "planned_distance_km": _infer_week_distance_km(week, key_workouts),
+                    "key_workouts": key_workouts,
+                }
+            )
+
+    else:
+        workouts = (
+            plan_detail.get("trainingPlanWorkouts")
+            or plan_detail.get("planWorkouts")
+            or plan_detail.get("workouts")
+            or []
+        )
+        if isinstance(workouts, list) and workouts:
+            grouped: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+            for workout in workouts:
+                if not isinstance(workout, dict):
+                    continue
+                week_number = workout.get("trainingPlanWeek") or workout.get("weekNumber") or workout.get("week")
+                try:
+                    week_number = int(week_number)
+                except (TypeError, ValueError):
+                    week_number = 1
+                grouped[week_number].append(workout)
+
+            if grouped:
+                if total_weeks is None:
+                    total_weeks = len(grouped)
+
+                for week_number in sorted(grouped)[:weeks]:
+                    summaries = [
+                        _summarize_training_workout(w) for w in grouped[week_number][:3]
+                    ]
+                    summaries = [s for s in summaries if s]
+                    preview.append(
+                        {
+                            "week": int(week_number),
+                            "total_workouts": len(grouped[week_number]),
+                            "planned_distance_km": _infer_week_distance_km({}, summaries),
+                            "key_workouts": summaries,
+                        }
+                    )
+
+    return {
+        "weeks": preview,
+        "preview_weeks": len(preview),
+        "total_weeks": total_weeks,
+        "note": "Preview limited to the first few weeks. Request full plan details for complete schedule."
+        if preview
+        else "Schedule structure not available in plan payload.",
+    }
+
+
+def summarize_training_plan_detail(
+    plan_detail: Dict[str, Any],
+    schedule_weeks: int = 4
+) -> Dict[str, Any]:
+    """
+    Summarize an individual training plan payload.
+
+    Args:
+        plan_detail: Training plan detail from Garmin Connect.
+        schedule_weeks: Number of weeks to include in the preview schedule.
+    """
+    plan_summary = (
+        plan_detail.get("planSummary")
+        or plan_detail.get("trainingPlan")
+        or plan_detail.get("plan")
+        or {}
+    )
+
+    summary = {
+        "id": plan_summary.get("trainingPlanId") or plan_summary.get("id"),
+        "name": plan_summary.get("planName") or plan_summary.get("name"),
+        "goal_type": plan_summary.get("goalType"),
+        "distance_type": plan_summary.get("distanceType") or plan_summary.get("goalRace"),
+        "experience_level": plan_summary.get("experienceLevel"),
+        "intensity": plan_summary.get("trainingPlanLevel") or plan_summary.get("intensity"),
+        "duration_weeks": plan_summary.get("durationWeeks") or plan_summary.get("planLengthInWeeks"),
+        "target_event_date": plan_summary.get("eventDate"),
+        "target_distance_km": _normalize_distance_to_km(
+            plan_summary.get("goalDistance")
+            or plan_summary.get("targetDistance")
+            or plan_detail.get("goalDistance")
+        ),
+        "description": plan_summary.get("summary") or plan_summary.get("description"),
+        "category": plan_summary.get("trainingPlanCategory") or plan_summary.get("planCategory"),
+    }
+
+    phases: List[Dict[str, Any]] = []
+    phase_sources = plan_detail.get("phases") or plan_detail.get("phaseSummaries")
+    if isinstance(phase_sources, list):
+        for idx, phase in enumerate(phase_sources, start=1):
+            if not isinstance(phase, dict):
+                continue
+            phases.append(
+                {
+                    "name": phase.get("phaseName") or phase.get("name") or f"Phase {idx}",
+                    "weeks": phase.get("numberOfWeeks") or phase.get("weeks"),
+                    "focus": phase.get("description") or phase.get("focus"),
+                }
+            )
+
+    schedule_preview = build_training_plan_schedule_preview(
+        plan_detail, weeks=schedule_weeks
+    )
+
+    return {
+        "plan": summary,
+        "phases": phases,
+        "schedule_preview": schedule_preview,
+        "available_keys": list(plan_detail.keys()),
+    }
+
+
+def summarize_training_plans(
+    response: Dict[str, Any],
+    *,
+    goal_distance: Optional[str] = None,
+    experience_level: Optional[str] = None,
+    max_items: int = 10
+) -> Dict[str, Any]:
+    """
+    Summarize available training plans with optional filters.
+
+    Args:
+        response: Payload from `Garmin.get_training_plans()`.
+        goal_distance: Optional distance keyword to filter plans (e.g. 'marathon').
+        experience_level: Optional experience keyword (e.g. 'intermediate').
+        max_items: Maximum number of plans to include in the response.
+    """
+    plan_list = response.get("trainingPlanList") or []
+    calendar_entries = response.get("trainingPlanCalendarList") or []
+
+    goal_distance_norm = (goal_distance or "").strip().lower()
+    experience_norm = (experience_level or "").strip().lower()
+
+    filtered: List[Dict[str, Any]] = []
+    for plan in plan_list:
+        if not isinstance(plan, dict):
+            continue
+
+        # Focus on running plans by default
+        primary_sport = str(
+            plan.get("primarySport")
+            or plan.get("sportType")
+            or plan.get("sportTypeKey")
+            or ""
+        ).lower()
+        if primary_sport and "run" not in primary_sport:
+            continue
+
+        if goal_distance_norm:
+            distance_tokens = " ".join(
+                str(plan.get(key, "")).lower()
+                for key in (
+                    "distanceType",
+                    "goalType",
+                    "trainingPlanType",
+                    "targetEventType",
+                    "raceEventType",
+                    "name",
+                )
+            )
+            if goal_distance_norm not in distance_tokens:
+                continue
+
+        if experience_norm:
+            plan_experience = str(plan.get("experienceLevel", "")).lower()
+            if experience_norm not in plan_experience:
+                continue
+
+        filtered.append(
+            {
+                "id": plan.get("trainingPlanId"),
+                "name": plan.get("name"),
+                "goal_type": plan.get("goalType"),
+                "distance_type": plan.get("distanceType"),
+                "experience_level": plan.get("experienceLevel"),
+                "intensity": plan.get("trainingPlanLevel") or plan.get("difficulty"),
+                "duration_weeks": plan.get("durationWeeks") or plan.get("planLengthInWeeks"),
+                "target_event_date": plan.get("eventDate"),
+                "target_distance_km": _normalize_distance_to_km(plan.get("goalDistance")),
+                "last_updated": plan.get("lastUpdateTime") or plan.get("lastModifiedDate"),
+                "category": plan.get("trainingPlanCategory"),
+                "description": plan.get("shortDescription"),
+            }
+        )
+
+    filtered.sort(
+        key=lambda plan: (
+            plan.get("target_event_date") or "",
+            plan.get("duration_weeks") or 0,
+        )
+    )
+
+    preview = filtered[:max(1, max_items)]
+    additional = max(0, len(filtered) - len(preview))
+
+    return {
+        "total_available": len(filtered),
+        "returned": len(preview),
+        "additional_available": additional,
+        "filters": {
+            "goal_distance": goal_distance_norm or None,
+            "experience_level": experience_norm or None,
+        },
+        "plans": preview,
+        "calendar_entries_available": bool(calendar_entries),
+        "note": "Use get_training_plan_details to inspect a specific plan. Calendar entries contain personal schedule mappings."
+        if calendar_entries
+        else "Calendar entries not available in response.",
+    }
+
+
+def normalize_distance_to_km(value: Any) -> Optional[float]:
+    """Public helper to convert distance representations to kilometers."""
+    return _normalize_distance_to_km(value)
 
 def clear_cache():
     """Clear all cached data."""

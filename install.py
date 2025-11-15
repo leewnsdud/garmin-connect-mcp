@@ -3,7 +3,6 @@
 Garmin Connect MCP 서버 통합 설치 스크립트
 모든 설정을 한 번에 처리합니다.
 """
-import os
 import sys
 import subprocess
 from pathlib import Path
@@ -40,7 +39,7 @@ def install_dependencies():
     
     try:
         # uv sync 실행
-        result = subprocess.run(["uv", "sync"], check=True, capture_output=True, text=True)
+        subprocess.run(["uv", "sync"], check=True, capture_output=True, text=True)
         print("✅ 의존성 설치 완료")
         return True
     except subprocess.CalledProcessError as e:
@@ -77,7 +76,7 @@ def run_authentication_setup():
     
     try:
         # 대화형 인증 설정 실행
-        result = subprocess.run(["uv", "run", "python", "setup_garmin_auth.py"], check=True)
+        subprocess.run(["uv", "run", "python", "setup_garmin_auth.py"], check=True)
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ 인증 설정 실패: {e}")
@@ -92,7 +91,7 @@ def setup_claude_code():
     
     try:
         # Claude Code에 MCP 서버 추가
-        result = subprocess.run([
+        subprocess.run([
             "claude", "mcp", "add", "garmin-connect", 
             "uv", "run", "python", "main.py"
         ], check=True, capture_output=True, text=True, cwd=Path.cwd())
@@ -115,7 +114,7 @@ def setup_claude_desktop():
     
     try:
         # Claude Desktop 설정 스크립트 실행
-        result = subprocess.run(["uv", "run", "python", "setup_claude_desktop.py", "add"], check=True)
+        subprocess.run(["uv", "run", "python", "setup_claude_desktop.py", "add"], check=True)
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Claude Desktop 설정 실패: {e}")
@@ -130,7 +129,7 @@ def run_final_test():
     
     try:
         # 인증 상태 확인
-        result = subprocess.run([
+        subprocess.run([
             "uv", "run", "python", "setup_garmin_auth.py", "check"
         ], check=True, capture_output=True, text=True)
         

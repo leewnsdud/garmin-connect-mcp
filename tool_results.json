@@ -1,0 +1,874 @@
+{
+  "sample_activity_id": "ACTIVITY_ID_MASKED",
+  "sample_activity_date": "2025-11-13",
+  "sample_plan_id": null,
+  "tool_results": [
+    {
+      "tool": "list_training_plans",
+      "status": "ok",
+      "preview": {
+        "total_available": 0,
+        "returned": 0,
+        "additional_available": 0,
+        "filters": {
+          "goal_distance": null,
+          "experience_level": null
+        },
+        "plans": [],
+        "calendar_entries_available": false,
+        "note": "Calendar entries not available in response.",
+        "metadata": {
+          "total_plans_in_response": 0,
+          "plan_ids": []
+        }
+      }
+    },
+    {
+      "tool": "analyze_heart_rate_zones",
+      "status": "ok",
+      "preview": {
+        "activity_id": "ACTIVITY_ID_MASKED",
+        "heart_rate_zones_config": null,
+        "zone_distribution": {
+          "type": "dict",
+          "keys": [
+            "Zone 1",
+            "Zone 2",
+            "Zone 3",
+            "Zone 4",
+            "Zone 5"
+          ]
+        },
+        "time_in_zones_data": {
+          "type": "list",
+          "length": 5
+        },
+        "note": "Zone analysis based on activity heart rate data"
+      }
+    },
+    {
+      "tool": "analyze_threshold_zones",
+      "status": "ok",
+      "preview": {
+        "threshold_zones": {
+          "type": "dict",
+          "keys": [
+            "note"
+          ]
+        },
+        "weekly_workout_plan": {
+          "type": "dict",
+          "keys": []
+        },
+        "norwegian_method_principles": {
+          "type": "dict",
+          "keys": [
+            "volume",
+            "frequency",
+            "recovery",
+            "progression"
+          ]
+        },
+        "threshold_data": {
+          "type": "dict",
+          "keys": [
+            "note"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "analyze_training_load",
+      "status": "ok",
+      "preview": {
+        "analysis_period": "4 weeks",
+        "total_distance_km": 172.8579702758789,
+        "total_time_hours": 14.852545750935873,
+        "activity_count": 25,
+        "weekly_breakdown": {
+          "type": "list",
+          "length": 4
+        }
+      }
+    },
+    {
+      "tool": "analyze_workout_quality",
+      "status": "ok",
+      "preview": {
+        "error": "Failed to analyze workout quality: 'variation'"
+      }
+    },
+    {
+      "tool": "calculate_training_paces",
+      "status": "ok",
+      "preview": {
+        "race_performance": {
+          "type": "dict",
+          "keys": [
+            "distance",
+            "time",
+            "pace_per_km"
+          ]
+        },
+        "training_paces": {
+          "type": "dict",
+          "keys": [
+            "easy_pace",
+            "marathon_pace",
+            "threshold_pace",
+            "interval_pace",
+            "repetition_pace"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "calculate_vdot_zones",
+      "status": "ok",
+      "preview": {
+        "vdot": 50.3,
+        "race_input": {
+          "type": "dict",
+          "keys": [
+            "distance",
+            "time",
+            "pace_per_km"
+          ]
+        },
+        "training_zones": {
+          "type": "dict",
+          "keys": [
+            "easy",
+            "marathon",
+            "threshold",
+            "interval",
+            "repetition"
+          ]
+        },
+        "equivalent_race_times": {
+          "type": "dict",
+          "keys": [
+            "5K",
+            "10K",
+            "half_marathon",
+            "marathon"
+          ]
+        },
+        "training_recommendations": {
+          "type": "dict",
+          "keys": [
+            "easy_runs",
+            "quality_workouts",
+            "long_runs"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "download_activity_file",
+      "status": "ok",
+      "preview": {
+        "error": "Could not download activity ACTIVITY_ID_MASKED in tcx format",
+        "details": "unexpected value tcx for dl_fmt"
+      }
+    },
+    {
+      "tool": "get_activities_for_date",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-13",
+        "total_activities": 1,
+        "running_activities": {
+          "type": "list",
+          "length": 1
+        },
+        "other_activities": {
+          "type": "list",
+          "length": 0
+        },
+        "summary": {
+          "type": "dict",
+          "keys": [
+            "total_running_distance_km",
+            "total_running_duration_minutes"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_activity_details",
+      "status": "ok",
+      "preview": {
+        "activity_id": "ACTIVITY_ID_MASKED",
+        "splits": {
+          "type": "dict",
+          "keys": [
+            "activityId",
+            "lapDTOs",
+            "eventDTOs"
+          ]
+        },
+        "weather": {
+          "type": "dict",
+          "keys": [
+            "issueDate",
+            "temp",
+            "apparentTemp",
+            "dewPoint",
+            "relativeHumidity"
+          ]
+        },
+        "performance_metrics": {
+          "type": "dict",
+          "keys": [
+            "normalized_power",
+            "training_stress_score",
+            "intensity_factor",
+            "stamina",
+            "estimated_race_predictor"
+          ]
+        },
+        "summary": {
+          "type": "dict",
+          "keys": [
+            "distance_km",
+            "duration_seconds",
+            "avg_pace",
+            "avg_hr",
+            "max_hr"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_activity_summary",
+      "status": "ok",
+      "preview": {
+        "activity_id": "ACTIVITY_ID_MASKED",
+        "activity_name": "러닝",
+        "activity_type": null,
+        "start_time": null,
+        "distance_km": 0
+      }
+    },
+    {
+      "tool": "get_advanced_running_metrics",
+      "status": "ok",
+      "preview": {
+        "activity_id": "ACTIVITY_ID_MASKED",
+        "advanced_running_metrics": {
+          "type": "dict",
+          "keys": []
+        },
+        "note": "Advanced metrics availability depends on device and activity type",
+        "full_details_resource": "activity://ACTIVITY_ID_MASKED/full",
+        "full_details_note": "Use full_details_resource URI to access complete activity_details"
+      }
+    },
+    {
+      "tool": "get_body_battery",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "body_battery_summary": {
+          "type": "dict",
+          "keys": [
+            "current_level",
+            "charged_value",
+            "drained_value"
+          ]
+        },
+        "body_battery_timeline": {
+          "type": "list",
+          "length": 1
+        }
+      }
+    },
+    {
+      "tool": "get_daily_activity",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "activity_summary": {
+          "type": "dict",
+          "keys": [
+            "steps",
+            "floors_climbed",
+            "intensity_minutes",
+            "calories_burned",
+            "distance_km"
+          ]
+        },
+        "raw_data": {
+          "type": "dict",
+          "keys": [
+            "steps",
+            "floors",
+            "intensity",
+            "daily_stats"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_device_settings",
+      "status": "ok",
+      "preview": {
+        "device_id": 3488336253,
+        "settings": {
+          "type": "dict",
+          "keys": [
+            "deviceId",
+            "timeFormat",
+            "dateFormat",
+            "measurementUnits",
+            "allUnits"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_devices",
+      "status": "ok",
+      "preview": {
+        "devices": {
+          "type": "list",
+          "length": 2
+        },
+        "device_count": 2
+      }
+    },
+    {
+      "tool": "get_endurance_score",
+      "status": "ok",
+      "preview": {
+        "error": "No endurance score data available",
+        "note": "Endurance score requires compatible Garmin device with running dynamics"
+      }
+    },
+    {
+      "tool": "get_gear_insights",
+      "status": "ok",
+      "preview": {
+        "total_activities": 985,
+        "threshold_km": 800,
+        "gear_items_analyzed": 0,
+        "gear_summary": {
+          "type": "list",
+          "length": 0
+        },
+        "alerts": {
+          "type": "list",
+          "length": 0
+        }
+      }
+    },
+    {
+      "tool": "get_heart_rate_metrics",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "resting_heart_rate": 50.0,
+        "heart_rate_zones": null,
+        "hrv": null,
+        "rhr_raw_data": {
+          "type": "dict",
+          "keys": [
+            "userProfileId",
+            "statisticsStartDate",
+            "statisticsEndDate",
+            "allMetrics",
+            "groupedMetrics"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_hill_score",
+      "status": "ok",
+      "preview": {
+        "error": "No hill score data available",
+        "note": "Hill score requires compatible Garmin device and elevation data"
+      }
+    },
+    {
+      "tool": "get_hrv_data",
+      "status": "ok",
+      "preview": {
+        "error": "No HRV data available",
+        "note": "HRV requires compatible device with continuous heart rate monitoring"
+      }
+    },
+    {
+      "tool": "get_lactate_threshold",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "lactate_threshold": {
+          "type": "dict",
+          "keys": [
+            "note"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_paginated_activities",
+      "status": "ok",
+      "preview": {
+        "activities": {
+          "type": "list",
+          "length": 5
+        },
+        "pagination": {
+          "type": "dict",
+          "keys": [
+            "start",
+            "limit",
+            "returned",
+            "has_more"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_personal_records",
+      "status": "ok",
+      "preview": {
+        "personal_records": {
+          "type": "dict",
+          "keys": [
+            "5K",
+            "10K",
+            "half_marathon",
+            "marathon"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_primary_training_device",
+      "status": "ok",
+      "preview": {
+        "primary_device": {
+          "type": "dict",
+          "keys": [
+            "device_id",
+            "device_name",
+            "product_name",
+            "supports_running_dynamics",
+            "last_sync"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_race_predictions",
+      "status": "ok",
+      "preview": {
+        "race_predictions": {
+          "type": "dict",
+          "keys": [
+            "note"
+          ]
+        },
+        "current_vo2_max": null,
+        "raw_predictions": {
+          "type": "dict",
+          "keys": [
+            "userId",
+            "fromCalendarDate",
+            "toCalendarDate",
+            "calendarDate",
+            "time5K"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_recent_running_activities",
+      "status": "ok",
+      "preview": {
+        "items": {
+          "type": "list",
+          "length": 5
+        },
+        "pagination": {
+          "type": "dict",
+          "keys": [
+            "returned",
+            "hasMore",
+            "nextCursor"
+          ]
+        },
+        "resources": {
+          "type": "dict",
+          "keys": [
+            "complete_list",
+            "note"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_recovery_time",
+      "status": "ok",
+      "preview": {
+        "recovery_info": {
+          "type": "dict",
+          "keys": [
+            "recovery_time_hours",
+            "recovery_time_formatted",
+            "fully_recovered_at"
+          ]
+        },
+        "last_activity": {
+          "type": "dict",
+          "keys": [
+            "activity_name",
+            "activity_type",
+            "start_time",
+            "training_effect"
+          ]
+        },
+        "training_status": {
+          "type": "dict",
+          "keys": [
+            "status",
+            "fitness_level"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_respiration_data",
+      "status": "ok",
+      "preview": {
+        "respiration_summary": {
+          "type": "dict",
+          "keys": [
+            "avg_sleeping_breath_rate",
+            "max_sleeping_breath_rate",
+            "min_sleeping_breath_rate",
+            "avg_waking_breath_rate",
+            "max_waking_breath_rate"
+          ]
+        },
+        "respiration_timeline": {
+          "type": "list",
+          "length": 0
+        },
+        "date": "2025-11-15"
+      }
+    },
+    {
+      "tool": "get_running_trends",
+      "status": "ok",
+      "preview": {
+        "analysis_period": "3 months",
+        "monthly_trends": {
+          "type": "list",
+          "length": 3
+        },
+        "overall_trends": {
+          "type": "dict",
+          "keys": [
+            "distance_trend",
+            "consistency"
+          ]
+        },
+        "total_runs": 94,
+        "note": "Default period reduced to 3 months. Use months_back parameter for longer periods"
+      }
+    },
+    {
+      "tool": "get_sleep_analysis",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "sleep_summary": {
+          "type": "dict",
+          "keys": [
+            "total_sleep_hours",
+            "sleep_start",
+            "sleep_end",
+            "sleep_levels",
+            "sleep_score"
+          ]
+        },
+        "raw_sleep_data": {
+          "type": "dict",
+          "keys": [
+            "dailySleepDTO",
+            "sleepMovement",
+            "remSleepData",
+            "sleepLevels"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_spo2_data",
+      "status": "ok",
+      "preview": {
+        "spo2_summary": {
+          "type": "dict",
+          "keys": [
+            "avg_spo2",
+            "min_spo2",
+            "max_spo2",
+            "last_measurement"
+          ]
+        },
+        "spo2_readings": {
+          "type": "list",
+          "length": 0
+        },
+        "date": "2025-11-15"
+      }
+    },
+    {
+      "tool": "get_stress_levels",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "stress_summary": {
+          "type": "dict",
+          "keys": []
+        },
+        "stress_timeline": {
+          "type": "dict",
+          "keys": [
+            "userProfilePK",
+            "calendarDate",
+            "startTimestampGMT",
+            "endTimestampGMT",
+            "startTimestampLocal"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_training_effect",
+      "status": "ok",
+      "preview": {
+        "period": "Last 7 days",
+        "summary": {
+          "type": "dict",
+          "keys": [
+            "average_aerobic_effect",
+            "average_anaerobic_effect",
+            "training_focus",
+            "aerobic_benefit",
+            "anaerobic_benefit"
+          ]
+        },
+        "activities": {
+          "type": "list",
+          "length": 6
+        },
+        "recommendations": {
+          "type": "dict",
+          "keys": [
+            "aerobic",
+            "anaerobic",
+            "recovery"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "get_training_load_balance",
+      "status": "ok",
+      "preview": {
+        "training_load_metrics": {
+          "type": "dict",
+          "keys": [
+            "acute_load_atl",
+            "chronic_load_ctl",
+            "training_stress_balance",
+            "atl_ctl_ratio",
+            "load_status"
+          ]
+        },
+        "weekly_progression": {
+          "type": "list",
+          "length": 4
+        },
+        "recommendations": {
+          "type": "dict",
+          "keys": [
+            "current_state",
+            "injury_risk",
+            "suggested_action"
+          ]
+        },
+        "analysis_period": "4 weeks",
+        "activity_count": 25
+      }
+    },
+    {
+      "tool": "get_training_plan_overview",
+      "status": "skipped",
+      "reason": "no training plans"
+    },
+    {
+      "tool": "get_training_plan_schedule",
+      "status": "skipped",
+      "reason": "no training plans"
+    },
+    {
+      "tool": "get_training_readiness",
+      "status": "ok",
+      "preview": {
+        "date": "2025-11-15",
+        "training_readiness": {
+          "type": "dict",
+          "keys": [
+            "note"
+          ]
+        },
+        "recovery_time_hours": null,
+        "raw_readiness_data": {
+          "type": "list",
+          "length": 0
+        }
+      }
+    },
+    {
+      "tool": "get_training_status",
+      "status": "ok",
+      "preview": {
+        "training_status": {
+          "type": "dict",
+          "keys": [
+            "status",
+            "fitness_level",
+            "load_balance",
+            "recovery_time",
+            "training_effect"
+          ]
+        },
+        "training_readiness": {
+          "type": "list",
+          "length": 0
+        },
+        "date": "2025-11-15",
+        "raw_training_status": {
+          "type": "dict",
+          "keys": [
+            "userId",
+            "mostRecentVO2Max",
+            "mostRecentTrainingLoadBalance",
+            "mostRecentTrainingStatus",
+            "heatAltitudeAcclimationDTO"
+          ]
+        },
+        "raw_training_readiness": {
+          "type": "list",
+          "length": 0
+        }
+      }
+    },
+    {
+      "tool": "get_vo2max",
+      "status": "ok",
+      "preview": {
+        "vo2_max": null,
+        "vo2_max_trend": null,
+        "race_predictions": {
+          "type": "dict",
+          "keys": [
+            "userId",
+            "fromCalendarDate",
+            "toCalendarDate",
+            "calendarDate",
+            "time5K"
+          ]
+        },
+        "date": "2025-11-15",
+        "raw_data": {
+          "type": "list",
+          "length": 0
+        }
+      }
+    },
+    {
+      "tool": "get_weekly_running_summary",
+      "status": "ok",
+      "preview": {
+        "weekly_summaries": {
+          "type": "list",
+          "length": 2
+        },
+        "trends": {
+          "type": "dict",
+          "keys": [
+            "distance_change_km",
+            "distance_change_percent",
+            "run_count_change"
+          ]
+        },
+        "analysis_period": "2 week(s)"
+      }
+    },
+    {
+      "tool": "set_race_goal",
+      "status": "ok",
+      "preview": {
+        "race_goal": {
+          "type": "dict",
+          "keys": [
+            "distance",
+            "target_time",
+            "target_pace_per_km",
+            "race_date",
+            "days_until_race"
+          ]
+        },
+        "training_recommendation": {
+          "type": "dict",
+          "keys": [
+            "phase",
+            "note"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "suggest_daily_workout",
+      "status": "ok",
+      "preview": {
+        "recommended_workout": {
+          "type": "dict",
+          "keys": [
+            "description",
+            "duration",
+            "pace",
+            "heart_rate",
+            "notes"
+          ]
+        },
+        "current_status": {
+          "type": "dict",
+          "keys": [
+            "training_phase",
+            "readiness_score",
+            "recovery_hours_remaining",
+            "training_load_ratio"
+          ]
+        },
+        "rationale": "Based on your build phase and current readiness",
+        "alternative_options": {
+          "type": "list",
+          "length": 3
+        },
+        "tomorrow_preview": "Check training readiness tomorrow morning for updated recommendation"
+      }
+    }
+  ],
+  "training_plan_list": {
+    "total": 0,
+    "plan_ids": []
+  }
+}
