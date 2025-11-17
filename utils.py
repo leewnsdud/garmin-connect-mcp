@@ -977,31 +977,91 @@ def split_large_response(
 
     logger.info(f"Response size ({current_size} bytes) exceeds limit ({max_size_bytes} bytes), splitting...")
 
-    result = {}
-    overflow_fields = {}
+    original_size = current_size
+    result: Dict[str, Any] = {}
+    overflow_fields: Dict[str, Any] = {}
 
+    def _move_to_overflow(field: str, value: Any) -> None:
+        overflow_fields[field] = value
+        field_size = estimate_json_size(value)
+        if create_resource_callback:
+            resource_uri = create_resource_callback(field, value)
+            result[f"{field}_resource"] = resource_uri
+            result[f"{field}_note"] = (
+                f"Field moved to resource due to size ({field_size} bytes). Use {resource_uri} to access."
+            )
+        else:
+            result[f"{field}_omitted"] = f"Field omitted due to size ({field_size} bytes)"
+
+    # Phase 1: move obvious large fields based on naming
     for key, value in data.items():
         if is_large_field(key, value, threshold_bytes=50_000):
-            # Move to overflow
-            overflow_fields[key] = value
-
-            # Create resource URI if callback provided
-            if create_resource_callback:
-                resource_uri = create_resource_callback(key, value)
-                result[f"{key}_resource"] = resource_uri
-                result[f"{key}_note"] = f"Data moved to resource due to size. Use {resource_uri} to access."
-            else:
-                result[f"{key}_omitted"] = f"Field omitted due to size ({estimate_json_size(value)} bytes)"
+            _move_to_overflow(key, value)
         else:
             result[key] = value
 
-    # Add metadata
+    current_size = estimate_json_size(result)
+
+    # Phase 2: iteratively move the largest remaining fields until size fits or only tiny fields remain
+    if current_size > max_size_bytes:
+        MIN_FIELD_SIZE = 1_024  # bytes
+        field_sizes: List[tuple[str, int]] = []
+        for key, value in list(result.items()):
+            try:
+                size = estimate_json_size(value)
+            except Exception:
+                continue
+            field_sizes.append((key, size))
+
+        field_sizes.sort(key=lambda item: item[1], reverse=True)
+
+        for key, size in field_sizes:
+            if current_size <= max_size_bytes or size < MIN_FIELD_SIZE:
+                break
+            value = result.pop(key)
+            _move_to_overflow(key, value)
+            current_size = estimate_json_size(result)
+
+    reduced_size = estimate_json_size(result)
+
     if overflow_fields:
         result["_overflow_info"] = {
             "fields_moved": list(overflow_fields.keys()),
-            "original_size_bytes": current_size,
-            "reduced_size_bytes": estimate_json_size(result)
+            "original_size_bytes": original_size,
+            "reduced_size_bytes": reduced_size
         }
+
+    # Phase 3: as a last resort, offload entire payload to a resource if still too large
+    if reduced_size > max_size_bytes and create_resource_callback:
+        summary_keys = list(result.keys())
+        summary_limit = 50
+        resource_uri = create_resource_callback("full_response", data)
+        logger.warning(
+            "Response still exceeds limit after splitting; storing full payload in %s",
+            resource_uri
+        )
+        return {
+            "overflow_resource": resource_uri,
+            "overflow_note": (
+                f"Full response stored in resource because it exceeded {max_size_bytes} bytes. "
+                "Use the URI to retrieve the payload."
+            ),
+            "summary": {
+                "available_fields": summary_keys[:summary_limit],
+                "total_available_fields": len(summary_keys)
+            },
+            "_overflow_info": {
+                "fields_moved": list(overflow_fields.keys()) + ["__full_response__"],
+                "original_size_bytes": original_size,
+                "reduced_size_bytes": 0,
+                "resource_only": True
+            }
+        }
+
+    if reduced_size > max_size_bytes and not create_resource_callback:
+        result["_overflow_warning"] = (
+            f"Response may still exceed {max_size_bytes} bytes. Consider requesting a smaller dataset."
+        )
 
     return result
 

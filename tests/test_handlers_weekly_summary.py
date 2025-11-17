@@ -20,7 +20,9 @@ class WeeklySummaryHandlerTestCase(unittest.IsolatedAsyncioTestCase):
         args = {"weeks_back": 2}
         result = await server._get_weekly_running_summary(args)
 
-        summary_mock.assert_awaited_once_with(server.client_service, args)
+        summary_mock.assert_awaited_once_with(
+            server.client_service, args, timezone=server.timezone
+        )
         self.assertEqual(result, {"weekly": [{"distance": 50}]})
 
 

@@ -78,6 +78,7 @@ uv sync
 ```bash
 cp .env.template .env
 # .env 파일을 열어 Garmin Connect 인증 정보 입력
+# 필요 시 GARMIN_TIMEZONE=Asia/Seoul 처럼 타임존(IANA ID 또는 UTC±HH:MM) 지정
 ```
 
 4. Garmin 인증 설정
@@ -108,12 +109,19 @@ uv run python setup_claude_desktop.py
       ],
       "env": {
         "GARMIN_USERNAME": [Garmin Connect 이메일],
-        "GARMIN_PASSWORD": [Garmin Connect 비밀번호]
+        "GARMIN_PASSWORD": [Garmin Connect 비밀번호],
+        "GARMIN_TIMEZONE": "Asia/Seoul"
       }
     }
   }
 }
 ```
+
+### 🕒 타임존 설정
+
+- `GARMIN_TIMEZONE` 환경 변수(또는 MCP 서버 설정의 `env`)를 사용해 날짜 계산 기준을 지정할 수 있습니다.
+- IANA 타임존(`Asia/Seoul`, `America/Los_Angeles`)이나 `UTC+09:00`, `GMT-0330` 형태의 오프셋을 지원합니다.
+- 미설정 시 기본값은 `UTC`이며, 모든 날짜 기반 도구(`get_activities_for_date`, `get_weekly_running_summary`, `download_activity_file`, 리소스 등)가 해당 타임존을 사용해 한국 시간 대비 하루 밀림 현상을 방지합니다.
 
 ## 사용 가능한 도구 (총 43개)
 
@@ -1184,6 +1192,8 @@ VDOT 기반 정확한 훈련 구간을 계산합니다.
 ```
 
 **참고:** FIT/Original 형식은 바이너리 데이터를 그대로 반환하며, 필요 시 외부 도구로 디코딩해야 합니다.
+
+대용량 텍스트 파일(TCX/GPX/CSV)은 MCP 응답 한도를 초과하면 자동으로 `overflow://...` 리소스로 오프로드되어 반환됩니다. 이 경우 응답에 포함된 리소스 URI를 사용해 전체 데이터를 스트리밍 방식으로 가져오면 됩니다.
 
 ### 🎯 목표 설정 (1개)
 

@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from datetime import datetime, timedelta, tzinfo
+from typing import Any, Dict, List, Optional
 
 from services.garmin_client import GarminClientService
 from utils import (
@@ -18,13 +18,15 @@ from utils import (
 async def get_weekly_running_summary(
     service: GarminClientService,
     args: Dict[str, Any],
+    timezone: Optional[tzinfo] = None,
 ) -> Dict[str, Any]:
     garmin = service.client
     weeks_back = args.get("weeks_back", 1)
 
     summaries = []
+    now = datetime.now(timezone)
     for week in range(max(1, int(weeks_back))):
-        end_date = datetime.now() - timedelta(weeks=week)
+        end_date = now - timedelta(weeks=week)
         start_date = end_date - timedelta(days=7)
 
         activities = await asyncio.to_thread(

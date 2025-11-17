@@ -4,8 +4,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from calendar import monthrange
-from datetime import datetime, timedelta
+import os
+import re
+from datetime import datetime, timedelta, timezone as dt_timezone, tzinfo
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from garminconnect import Garmin
 from mcp.server import Server, NotificationOptions
@@ -45,11 +48,77 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+TIMEZONE_ENV_KEYS = [
+    "GARMIN_TIMEZONE",
+    "MCP_TIMEZONE",
+    "GARMIN_TZ",
+    "MCP_TZ",
+    "TZ",
+]
+DEFAULT_TIMEZONE_NAME = "UTC"
+_OFFSET_PATTERN = re.compile(r"^(?:UTC|GMT)?\s*([+-]?)(\d{1,2})(?::?(\d{2}))?$", re.IGNORECASE)
+
+
+def _parse_timezone_offset(value: str) -> Optional[tzinfo]:
+    """Parse simple UTC/GMT offset strings like '+9', 'UTC+09:00', or 'GMT-0530'."""
+    match = _OFFSET_PATTERN.match(value.strip())
+    if not match:
+        return None
+
+    sign_str, hours_str, minutes_str = match.groups()
+    sign = -1 if sign_str == "-" else 1
+    hours = int(hours_str)
+    minutes = int(minutes_str) if minutes_str else 0
+
+    if hours > 14 or minutes >= 60:
+        logger.warning("Timezone offset %s is out of supported range; ignoring.", value)
+        return None
+
+    offset = timedelta(hours=hours, minutes=minutes)
+    if sign < 0:
+        offset = -offset
+    return dt_timezone(offset)
+
+
+def _coerce_timezone(value: Optional[str]) -> Optional[tzinfo]:
+    """Attempt to convert an environment string to a tzinfo."""
+    if not value:
+        return None
+
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+
+    try:
+        return ZoneInfo(cleaned)
+    except ZoneInfoNotFoundError:
+        offset_tz = _parse_timezone_offset(cleaned)
+        if offset_tz:
+            return offset_tz
+        logger.warning("Unknown timezone '%s'; falling back to default.", cleaned)
+        return None
+    except Exception:
+        logger.warning("Failed to interpret timezone '%s'; falling back to default.", cleaned)
+        return None
+
+
+def _resolve_timezone_config() -> tuple[tzinfo, str]:
+    """Resolve timezone from environment variables with safe fallbacks."""
+    for key in TIMEZONE_ENV_KEYS:
+        env_value = os.getenv(key)
+        tz = _coerce_timezone(env_value)
+        if tz:
+            return tz, env_value.strip()
+
+    return ZoneInfo(DEFAULT_TIMEZONE_NAME), DEFAULT_TIMEZONE_NAME
+
 
 class GarminConnectMCP:
     def __init__(self):
         self.client_service = GarminClientService()
         self.server = Server("garmin-connect-mcp")
+        self.timezone, self.timezone_name = _resolve_timezone_config()
+        logger.info("Configured timezone: %s", self.timezone_name)
         self.tool_handlers: Dict[str, Any] = {}
         self._activity_context: Dict[str, Any] = (
             {}
@@ -61,6 +130,13 @@ class GarminConnectMCP:
     @property
     def garmin_client(self) -> Garmin:
         return self.client_service.client
+
+    def _now(self) -> datetime:
+        """Return timezone-aware 'now' based on configured timezone."""
+        return datetime.now(self.timezone)
+
+    def _current_date_str(self) -> str:
+        return self._now().strftime("%Y-%m-%d")
 
     def _create_overflow_resource(self, field_name: str, data: Any) -> str:
         """
@@ -273,7 +349,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -287,7 +363,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -460,7 +536,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -474,7 +550,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -488,7 +564,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -502,7 +578,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -516,7 +592,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -633,7 +709,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -652,7 +728,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -771,7 +847,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -785,7 +861,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -799,7 +875,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -813,7 +889,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -827,7 +903,7 @@ class GarminConnectMCP:
                             "date": {
                                 "type": "string",
                                 "description": "Date in YYYY-MM-DD format, defaults to today",
-                                "default": datetime.now().strftime("%Y-%m-%d"),
+                                "default": self._current_date_str(),
                             }
                         },
                     },
@@ -1020,7 +1096,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_duration_hours=1.0)
     async def _get_vo2max(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         # Get VO2 Max data
         try:
@@ -1063,7 +1139,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_duration_hours=1.0)
     async def _get_training_status(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         # Get training status
         try:
@@ -1119,8 +1195,9 @@ class GarminConnectMCP:
         cursor_data = decode_cursor(cursor) if cursor else None
         offset = cursor_data.get("offset", 0) if cursor_data else 0
 
-        start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        current_time = self._now()
+        start_date = (current_time - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        end_date = current_time.strftime("%Y-%m-%d")
 
         activities = await asyncio.to_thread(
             self.garmin_client.get_activities_by_date, start_date, end_date
@@ -1277,7 +1354,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_type="heart_rate")  # 15 minutes cache
     async def _get_heart_rate_metrics(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         # Get resting heart rate data
         rhr_data = await asyncio.to_thread(self.garmin_client.get_rhr_day, date)
@@ -1325,7 +1402,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_type="sleep")  # 2 hours cache
     async def _get_sleep_analysis(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             sleep_data = await asyncio.to_thread(
@@ -1365,7 +1442,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_type="body_battery")  # 30 minutes cache
     async def _get_body_battery(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             body_battery = await asyncio.to_thread(
@@ -1398,7 +1475,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_type="stress")  # 15 minutes cache
     async def _get_stress_levels(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             stress_data = await asyncio.to_thread(
@@ -1435,7 +1512,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=0.5)  # 30 minutes cache for daily activity
     @response_size_guard(max_bytes=800_000)
     async def _get_daily_activity(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         # Get various daily activity metrics
         try:
@@ -1742,8 +1819,10 @@ class GarminConnectMCP:
         target_pace_formatted = format_pace(target_pace_per_km)
 
         # Calculate days until race
-        race_date_obj = datetime.strptime(race_date, "%Y-%m-%d")
-        days_until_race = (race_date_obj - datetime.now()).days
+        race_date_obj = datetime.strptime(race_date, "%Y-%m-%d").replace(
+            tzinfo=self.timezone
+        )
+        days_until_race = (race_date_obj - self._now()).days
 
         return {
             "race_goal": {
@@ -1769,8 +1848,9 @@ class GarminConnectMCP:
         weeks_back = args.get("weeks_back", 4)
 
         # Get activities for the specified period
-        start_date = (datetime.now() - timedelta(weeks=weeks_back)).strftime("%Y-%m-%d")
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        current_time = self._now()
+        start_date = (current_time - timedelta(weeks=weeks_back)).strftime("%Y-%m-%d")
+        end_date = current_time.strftime("%Y-%m-%d")
 
         activities = await asyncio.to_thread(
             self.garmin_client.get_activities_by_date, start_date, end_date
@@ -1789,8 +1869,8 @@ class GarminConnectMCP:
         # Weekly breakdown
         weekly_stats = []
         for week in range(weeks_back):
-            week_start = datetime.now() - timedelta(weeks=week + 1)
-            week_end = datetime.now() - timedelta(weeks=week)
+            week_start = (current_time - timedelta(weeks=week + 1)).date()
+            week_end = (current_time - timedelta(weeks=week)).date()
 
             week_activities = [
                 activity
@@ -1798,7 +1878,7 @@ class GarminConnectMCP:
                 if week_start
                 <= datetime.strptime(
                     activity.get("startTimeLocal", "")[:10], "%Y-%m-%d"
-                )
+                ).date()
                 < week_end
             ]
 
@@ -1833,7 +1913,7 @@ class GarminConnectMCP:
         months_back = args.get("months_back", 3)  # Reduced from 6 to 3 months
 
         # Calculate the actual start date based on calendar months
-        now = datetime.now()
+        now = self._now()
         current_year = now.year
         current_month = now.month
 
@@ -1944,7 +2024,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_duration_hours=6.0)  # 6 hours cache - changes slowly
     async def _get_lactate_threshold(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             # Get training status which might include lactate threshold
@@ -2051,7 +2131,7 @@ class GarminConnectMCP:
             try:
                 max_metrics = await asyncio.to_thread(
                     self.garmin_client.get_max_metrics,
-                    datetime.now().strftime("%Y-%m-%d"),
+                    self._current_date_str(),
                 )
                 if isinstance(max_metrics, list) and len(max_metrics) > 0:
                     for metric in max_metrics:
@@ -2079,7 +2159,7 @@ class GarminConnectMCP:
     @handle_api_errors
     @cached(cache_type="training_readiness")  # 1 hour cache
     async def _get_training_readiness(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             # Get training readiness
@@ -2151,7 +2231,7 @@ class GarminConnectMCP:
     async def _get_recovery_time(self, args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             # Get recovery time from training status
-            date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+            date = args.get("date", self._current_date_str())
             training_status = await asyncio.to_thread(
                 self.garmin_client.get_training_status, date
             )
@@ -2163,7 +2243,7 @@ class GarminConnectMCP:
                     "recovery_time_hours": recovery_hours,
                     "recovery_time_formatted": f"{int(recovery_hours)} hours",
                     "fully_recovered_at": (
-                        (datetime.now() + timedelta(hours=recovery_hours)).strftime(
+                        (self._now() + timedelta(hours=recovery_hours)).strftime(
                             "%Y-%m-%d %H:%M"
                         )
                         if recovery_hours
@@ -2223,10 +2303,11 @@ class GarminConnectMCP:
 
         try:
             # Get activities for the analysis period
-            start_date = (datetime.now() - timedelta(weeks=weeks_back)).strftime(
+            current_time = self._now()
+            start_date = (current_time - timedelta(weeks=weeks_back)).strftime(
                 "%Y-%m-%d"
             )
-            end_date = datetime.now().strftime("%Y-%m-%d")
+            end_date = current_time.strftime("%Y-%m-%d")
 
             activities = await asyncio.to_thread(
                 self.garmin_client.get_activities_by_date, start_date, end_date
@@ -2257,7 +2338,7 @@ class GarminConnectMCP:
                     daily_loads[date] = trimp
 
             # Calculate ATL (Acute Training Load - 7 days) and CTL (Chronic Training Load - 28 days)
-            today = datetime.now()
+            today = current_time
             atl_sum = 0
             atl_days = 0
             ctl_sum = 0
@@ -2349,10 +2430,11 @@ class GarminConnectMCP:
 
         try:
             # Get recent activities
-            start_date = (datetime.now() - timedelta(days=days_back)).strftime(
+            current_time = self._now()
+            start_date = (current_time - timedelta(days=days_back)).strftime(
                 "%Y-%m-%d"
             )
-            end_date = datetime.now().strftime("%Y-%m-%d")
+            end_date = current_time.strftime("%Y-%m-%d")
 
             activities = await asyncio.to_thread(
                 self.garmin_client.get_activities_by_date, start_date, end_date
@@ -2639,7 +2721,7 @@ class GarminConnectMCP:
                 }
 
                 # Get day of week (0 = Monday)
-                day_of_week = datetime.now().weekday()
+                day_of_week = self._now().weekday()
                 workout_options = phase_workouts.get(
                     training_phase, phase_workouts["build"]
                 )
@@ -3082,7 +3164,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=1.0)
     async def _get_endurance_score(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Get endurance performance score"""
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             endurance_data = await asyncio.to_thread(
@@ -3109,7 +3191,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=1.0)
     async def _get_hill_score(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Get hill running performance score"""
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             hill_data = await asyncio.to_thread(self.garmin_client.get_hill_score, date)
@@ -3134,7 +3216,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=0.5)  # Shorter cache for HRV data
     async def _get_hrv_data(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Get detailed HRV data"""
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             hrv_data = await asyncio.to_thread(self.garmin_client.get_hrv_data, date)
@@ -3165,7 +3247,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=1.0)
     async def _get_respiration_data(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Get respiration data"""
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             respiration = await asyncio.to_thread(
@@ -3209,7 +3291,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=2.0)  # Longer cache for SpO2 as it changes slowly
     async def _get_spo2_data(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Get SpO2 (blood oxygen) data"""
-        date = args.get("date", datetime.now().strftime("%Y-%m-%d"))
+        date = args.get("date", self._current_date_str())
 
         try:
             spo2_data = await asyncio.to_thread(self.garmin_client.get_spo2_data, date)
@@ -3428,10 +3510,14 @@ class GarminConnectMCP:
 
     @handle_api_errors
     @validate_required_params("activity_id")
+    @response_size_guard(max_bytes=800_000)
     async def _download_activity_file(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Download activity in specified file format."""
         activity_id = args["activity_id"]
         file_format = args.get("format", "tcx").lower()
+
+        # Set context for overflow resource handling
+        self._activity_context["activity_id"] = activity_id
 
         # Validate format
         valid_formats = ["tcx", "gpx", "fit", "csv"]
@@ -3511,7 +3597,7 @@ class GarminConnectMCP:
     @cached(cache_duration_hours=0.5)  # 30 minutes cache
     async def _get_weekly_running_summary(self, args: Dict[str, Any]) -> Dict[str, Any]:
         return await analytics_handlers.get_weekly_running_summary(
-            self.client_service, args
+            self.client_service, args, timezone=self.timezone
         )
 
     # ============================================================================
@@ -3532,8 +3618,9 @@ class GarminConnectMCP:
         offset = cursor_data.get("offset", 0) if cursor_data else 0
 
         # Get activities
-        start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        current_time = self._now()
+        start_date = (current_time - timedelta(days=90)).strftime("%Y-%m-%d")
+        end_date = current_time.strftime("%Y-%m-%d")
 
         activities = await asyncio.to_thread(
             self.garmin_client.get_activities_by_date, start_date, end_date
@@ -3708,7 +3795,7 @@ class GarminConnectMCP:
         offset = cursor_data.get("offset", 0) if cursor_data else 0
 
         # Calculate date range
-        now = datetime.now()
+        now = self._now()
         start_month = now.month - months
         start_year = now.year
         while start_month <= 0:
