@@ -120,7 +120,7 @@ Get my last 2 running activities
     "max_vertical_speed": 0.8,
     "water_estimated_ml": 538.0,
     "split_summary": {
-      "run": { "distance_km": 5.76, "duration_seconds": 1948.7, "avg_speed_mps": 2.96, "elevation_gain": 0.1, "elevation_loss": 10.0 }
+      "run": { "distance_km": 5.76, "duration_seconds": 1948.7, "avg_pace": "5:38", "elevation_gain": 0.1, "elevation_loss": 10.0 }
     }
   }
 ]
@@ -222,7 +222,10 @@ Get splits for activity 21892408004
       "lapIndex": 1,
       "distance": 1000,
       "duration": 349.8,
-      "averageSpeed": 2.86,
+      "avg_pace": "5:49",
+      "avg_moving_pace": "5:49",
+      "max_pace": "5:23",
+      "grade_adjusted_pace": "5:55",
       "averageHR": 144,
       "maxHR": 156,
       "averageRunCadence": 175.3,
@@ -236,7 +239,9 @@ Get splits for activity 21892408004
       "lapIndex": 2,
       "distance": 1000,
       "duration": 350.6,
-      "averageSpeed": 2.85,
+      "avg_pace": "5:50",
+      "max_pace": "5:25",
+      "grade_adjusted_pace": "5:52",
       "averageHR": 156,
       "maxHR": 159,
       "averageRunCadence": 175.3,
@@ -246,7 +251,7 @@ Get splits for activity 21892408004
 }
 ```
 
-> Note: Speed is in m/s. To convert to pace (min:sec/km), use `1000 / speed / 60` for minutes.
+> All speed fields are automatically converted to pace (min:sec/km). `grade_adjusted_pace` shows the effort-equivalent pace on flat terrain. `maxVerticalSpeed` (m/s) is kept as-is since it represents climbing rate, not running pace.
 
 #### `get_activity_weather`
 
