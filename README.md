@@ -142,7 +142,7 @@ uv run python scripts/auth.py
 
 | 도구 | 설명 | 주요 파라미터 |
 |------|------|--------------|
-| `get_running_gear` | 러닝화 목록 + 누적 거리 | 없음 |
+| `get_running_gear` | 러닝화 목록 + 누적 거리 + 마모율 | 없음 |
 
 ## 워크아웃 생성 가이드
 
