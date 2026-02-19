@@ -6,7 +6,7 @@ Claude Desktop 등 MCP 클라이언트와 연동하여 러닝 훈련 분석, 계
 
 ## 주요 기능
 
-- **러닝 활동 조회** - 최근 활동, 날짜별 조회, 상세 분석, 스플릿 데이터
+- **러닝 활동 조회** - 최근 활동, 날짜별 조회, 상세 분석, 스플릿 데이터 (43개 필드: 페이스, 심박, 케이던스, 러닝 다이나믹스, 파워, HR존, 온도 등)
 - **주간/월간 요약** - 볼륨 트렌드, 전월 대비 비교
 - **훈련 지표** - VO2max, 훈련 상태, 훈련 준비도, 레이스 예측, 젖산역치
 - **심박/HRV** - 일간 심박, 심박변이도, 활동별 심박존 분포
@@ -14,6 +14,7 @@ Claude Desktop 등 MCP 클라이언트와 연동하여 러닝 훈련 분석, 계
 - **개인 기록/목표** - PR, 피트니스 목표
 - **워크아웃 생성** - 인터벌, 템포 등 구조화된 워크아웃을 Garmin 워치에 전송
 - **러닝화 관리** - 신발별 누적 거리 추적
+- **개인정보 보호** - 모든 API 응답에서 PII(소유자 이름, 프로필 ID, GPS 좌표) 자동 필터링
 
 ## 요구 사항
 
@@ -24,8 +25,8 @@ Claude Desktop 등 MCP 클라이언트와 연동하여 러닝 훈련 분석, 계
 ## 설치
 
 ```bash
-git clone https://github.com/your-repo/garmin-mcp.git
-cd garmin-mcp
+git clone https://github.com/leewnsdud/garmin-connect-mcp.git
+cd garmin-connect-mcp
 uv sync
 ```
 
@@ -84,7 +85,7 @@ uv run python scripts/auth.py
 |------|------|--------------|
 | `get_recent_activities` | 최근 러닝 활동 목록 | `count` (기본 20, 최대 100) |
 | `get_activities_by_date` | 날짜 범위로 러닝 활동 조회 | `start_date`, `end_date` |
-| `get_activity_detail` | 활동 상세 정보 | `activity_id` |
+| `get_activity_detail` | 활동 상세 정보 (GPS 좌표 제외) | `activity_id` |
 | `get_activity_splits` | km별 스플릿 데이터 | `activity_id` |
 
 ### Summary
@@ -237,6 +238,17 @@ uv sync --reinstall-package garmin-mcp
 
 # Claude Desktop 재시작으로 MCP 서버 반영
 ```
+
+## 개인정보 보호
+
+모든 Garmin API 응답에서 다음 개인정보 필드가 자동으로 제거됩니다:
+
+- **소유자 정보**: `ownerId`, `ownerFullName`, `ownerDisplayName`, 프로필 이미지 URL
+- **프로필 ID**: `userProfilePK`, `userProfileId`, `profileId`, `profileNumber`
+- **사용자 정보**: `displayName`, `fullName`, `userPro`, `userRoles`
+- **GPS 좌표**: `startLatitude`, `startLongitude`, `endLatitude`, `endLongitude`
+
+이 필터링은 `src/garmin_mcp/sanitize.py`의 `strip_pii()` 함수를 통해 재귀적으로 처리됩니다.
 
 ## 기술 스택
 
