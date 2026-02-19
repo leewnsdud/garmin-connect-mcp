@@ -32,15 +32,32 @@ def register(mcp: FastMCP):
                     "date_end": gear.get("dateEnd"),
                 }
 
+                # Max distance limit set by user (meters)
+                max_meters = gear.get("maximumMeters")
+                if max_meters and max_meters > 0:
+                    gear_info["max_distance_km"] = round(max_meters / 1000, 1)
+                else:
+                    gear_info["max_distance_km"] = None
+
                 try:
                     stats = client.get_gear_stats(gear.get("uuid", ""))
+                    total_dist = stats.get("totalDistance", 0)
                     gear_info["total_distance_km"] = round(
-                        stats.get("totalDistance", 0) / 1000, 2
-                    ) if stats.get("totalDistance") else 0
+                        total_dist / 1000, 2
+                    ) if total_dist else 0
                     gear_info["total_activities"] = stats.get("totalActivities", 0)
+
+                    # Wear percentage based on user-set max distance
+                    if max_meters and max_meters > 0 and total_dist:
+                        gear_info["wear_percentage"] = round(
+                            (total_dist / max_meters) * 100, 1
+                        )
+                    else:
+                        gear_info["wear_percentage"] = None
                 except Exception:
                     gear_info["total_distance_km"] = None
                     gear_info["total_activities"] = None
+                    gear_info["wear_percentage"] = None
 
                 running_gear.append(gear_info)
 

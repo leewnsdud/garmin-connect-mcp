@@ -813,7 +813,7 @@ Show my saved workouts
 
 #### `get_running_gear`
 
-Returns running shoes with cumulative distance and activity count. Useful for determining when to replace shoes (typically 500-800 km).
+Returns running shoes with cumulative distance, activity count, user-configured max distance, and wear percentage. Useful for determining when to replace shoes. Returns both active and retired shoes.
 
 **Parameters:** none
 **Returns:** `list[dict]`
@@ -832,27 +832,34 @@ Which of my shoes need replacement?
     "model": "Unknown Shoes",
     "status": "active",
     "date_begin": "2025-05-12T00:00:00.0",
+    "date_end": null,
+    "max_distance_km": 700.0,
     "total_distance_km": 854.96,
-    "total_activities": 95
+    "total_activities": 95,
+    "wear_percentage": 122.1
   },
   {
     "uuid": "469605dc-...",
     "name": "Asics Superblast",
     "status": "active",
+    "max_distance_km": 700.0,
     "total_distance_km": 822.37,
-    "total_activities": 83
+    "total_activities": 83,
+    "wear_percentage": 117.5
   },
   {
     "uuid": "56bcedf9-...",
     "name": "Brooks Glycerin GTS 20",
     "status": "retired",
+    "max_distance_km": 700.0,
     "total_distance_km": 766.04,
-    "total_activities": 84
+    "total_activities": 84,
+    "wear_percentage": 109.4
   }
 ]
 ```
 
-> Shoes with `total_distance_km` > 700 should be flagged for replacement. `status` can be `active` or `retired`.
+> `wear_percentage` is calculated from user-set `max_distance_km` and `total_distance_km`. Values over 100% mean the shoe has exceeded its configured lifespan. `max_distance_km` is `null` if the user hasn't set a distance limit. `status` can be `active` or `retired`. Both active and retired shoes are returned.
 
 ---
 
