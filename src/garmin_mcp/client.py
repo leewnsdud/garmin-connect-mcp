@@ -79,6 +79,12 @@ class GarminClient:
     def get_activity_hr_in_timezones(self, activity_id: int) -> list[dict[str, Any]]:
         return self._call("get_activity_hr_in_timezones", activity_id)
 
+    def get_activity_weather(self, activity_id: int) -> dict[str, Any]:
+        return self._call("get_activity_weather", activity_id)
+
+    def get_activity_typed_splits(self, activity_id: int) -> dict[str, Any]:
+        return self._call("get_activity_typed_splits", activity_id)
+
     # --- Training ---
 
     def get_training_status(self, date_str: str) -> dict[str, Any]:
