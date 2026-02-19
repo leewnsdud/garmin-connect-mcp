@@ -4,6 +4,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from garmin_mcp.sanitize import strip_pii
+
 
 def _parse_pace_to_speed(pace_str: str) -> float:
     """Convert pace string (e.g. '4:30' min/km) to speed in m/s."""
@@ -186,12 +188,12 @@ def register(mcp: FastMCP):
             workout.description = description
 
         result = client.upload_running_workout(workout)
-        return {
+        return strip_pii({
             "status": "created",
             "workout_name": name,
             "estimated_duration_seconds": estimated_duration,
             "result": result,
-        }
+        })
 
     @mcp.tool()
     def get_workouts(count: int = 20) -> list[dict[str, Any]]:
@@ -204,4 +206,4 @@ def register(mcp: FastMCP):
 
         client = get_client()
         count = min(count, 100)
-        return client.get_workouts(start=0, limit=count)
+        return strip_pii(client.get_workouts(start=0, limit=count))
