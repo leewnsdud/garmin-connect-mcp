@@ -5,6 +5,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from garmin_mcp.client import today_str
+from garmin_mcp.sanitize import strip_pii
 
 
 def register(mcp: FastMCP):
@@ -34,7 +35,7 @@ def register(mcp: FastMCP):
 
         client = get_client()
         d = date or today_str()
-        return client.get_training_readiness(d)
+        return strip_pii(client.get_training_readiness(d))
 
     @mcp.tool()
     def get_vo2max_and_fitness(date: str = "") -> dict[str, Any]:
@@ -86,7 +87,7 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        return client.get_lactate_threshold(
+        return strip_pii(client.get_lactate_threshold(
             start_date=start_date or None,
             end_date=end_date or None,
-        )
+        ))

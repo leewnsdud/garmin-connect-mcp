@@ -5,6 +5,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from garmin_mcp.client import today_str
+from garmin_mcp.sanitize import strip_pii
 
 
 RUNNING_TYPE_KEYS = {"running", "track_running", "trail_running", "treadmill_running"}
@@ -33,6 +34,8 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
     distance_m = activity.get("distance", 0)
     duration_s = activity.get("duration", 0)
     avg_pace_s = (duration_s / (distance_m / 1000)) if distance_m > 0 else None
+    max_speed = activity.get("maxSpeed")
+    max_pace_s = (1000 / max_speed) if max_speed and max_speed > 0 else None
 
     return {
         "activity_id": activity.get("activityId"),
@@ -41,18 +44,43 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
         "type": activity.get("activityType", {}).get("typeKey"),
         "distance_km": round(distance_m / 1000, 2) if distance_m else 0,
         "duration_seconds": round(duration_s, 1) if duration_s else 0,
-        "duration_display": activity.get("duration", ""),
+        "moving_duration_seconds": round(activity["movingDuration"], 1) if activity.get("movingDuration") else None,
         "avg_pace": _format_pace(avg_pace_s),
+        "max_pace": _format_pace(max_pace_s),
         "avg_heart_rate": activity.get("averageHR"),
         "max_heart_rate": activity.get("maxHR"),
         "avg_cadence": activity.get("averageRunningCadenceInStepsPerMinute"),
+        "max_cadence": activity.get("maxRunningCadenceInStepsPerMinute"),
+        "avg_stride_length_cm": round(activity["avgStrideLength"], 1) if activity.get("avgStrideLength") else None,
+        "avg_ground_contact_time_ms": round(activity["avgGroundContactTime"], 1) if activity.get("avgGroundContactTime") else None,
+        "avg_vertical_oscillation_cm": round(activity["avgVerticalOscillation"], 1) if activity.get("avgVerticalOscillation") else None,
+        "avg_vertical_ratio": round(activity["avgVerticalRatio"], 1) if activity.get("avgVerticalRatio") else None,
         "calories": activity.get("calories"),
         "elevation_gain": activity.get("elevationGain"),
         "elevation_loss": activity.get("elevationLoss"),
+        "max_elevation": activity.get("maxElevation"),
+        "min_elevation": activity.get("minElevation"),
         "avg_power": activity.get("avgPower"),
+        "max_power": activity.get("maxPower"),
+        "normalized_power": activity.get("normPower"),
         "training_effect_aerobic": activity.get("aerobicTrainingEffect"),
         "training_effect_anaerobic": activity.get("anaerobicTrainingEffect"),
+        "training_load": activity.get("activityTrainingLoad"),
+        "training_effect_label": activity.get("trainingEffectLabel"),
         "vo2max": activity.get("vO2MaxValue"),
+        "fastest_split_1km": _format_pace(activity.get("fastestSplit_1000")),
+        "fastest_split_1mile": _format_pace(activity.get("fastestSplit_1609")),
+        "fastest_split_5km": _format_pace(activity.get("fastestSplit_5000")),
+        "hr_zone_1_seconds": activity.get("hrTimeInZone_1"),
+        "hr_zone_2_seconds": activity.get("hrTimeInZone_2"),
+        "hr_zone_3_seconds": activity.get("hrTimeInZone_3"),
+        "hr_zone_4_seconds": activity.get("hrTimeInZone_4"),
+        "hr_zone_5_seconds": activity.get("hrTimeInZone_5"),
+        "steps": activity.get("steps"),
+        "lap_count": activity.get("lapCount"),
+        "is_pr": activity.get("pr"),
+        "max_temperature": activity.get("maxTemperature"),
+        "min_temperature": activity.get("minTemperature"),
     }
 
 
@@ -153,8 +181,6 @@ def register(mcp: FastMCP):
             "avg_temperature": summary.get("averageTemperature"),
             "max_temperature": summary.get("maxTemperature"),
             "min_temperature": summary.get("minTemperature"),
-            "start_latitude": summary.get("startLatitude"),
-            "start_longitude": summary.get("startLongitude"),
             "steps": summary.get("steps"),
             "description": activity.get("description"),
         }
@@ -171,4 +197,4 @@ def register(mcp: FastMCP):
 
         client = get_client()
         splits = client.get_activity_splits(activity_id)
-        return splits
+        return strip_pii(splits)

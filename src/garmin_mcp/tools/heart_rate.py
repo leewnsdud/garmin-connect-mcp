@@ -5,6 +5,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from garmin_mcp.client import today_str
+from garmin_mcp.sanitize import strip_pii
 
 
 def register(mcp: FastMCP):
@@ -28,10 +29,10 @@ def register(mcp: FastMCP):
         except Exception:
             rhr_data = None
 
-        return {
+        return strip_pii({
             "heart_rates": hr_data,
             "resting_heart_rate": rhr_data,
-        }
+        })
 
     @mcp.tool()
     def get_hrv_data(date: str = "") -> dict[str, Any]:

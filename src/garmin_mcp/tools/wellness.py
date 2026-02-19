@@ -6,6 +6,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from garmin_mcp.client import today_str
+from garmin_mcp.sanitize import strip_pii
 
 
 def register(mcp: FastMCP):
@@ -21,7 +22,7 @@ def register(mcp: FastMCP):
 
         client = get_client()
         d = date or today_str()
-        return client.get_sleep_data(d)
+        return strip_pii(client.get_sleep_data(d))
 
     @mcp.tool()
     def get_daily_wellness(date: str = "") -> dict[str, Any]:
@@ -59,7 +60,7 @@ def register(mcp: FastMCP):
         except Exception:
             result["respiration"] = None
 
-        return result
+        return strip_pii(result)
 
     @mcp.tool()
     def get_weekly_wellness_summary(
