@@ -29,6 +29,31 @@ def _format_pace(seconds_per_km: float | None) -> str | None:
     return f"{minutes}:{secs:02d}"
 
 
+def _build_split_summary(split_summaries: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """Build a concise run/walk/stand summary from splitSummaries (RWD data).
+
+    This is particularly useful for trail running where Garmin auto-detects
+    running, walking, and standing segments.
+    """
+    if not split_summaries:
+        return None
+    rwd_types = {"RWD_RUN", "RWD_WALK", "RWD_STAND"}
+    result = {}
+    for s in split_summaries:
+        stype = s.get("splitType", "")
+        if stype not in rwd_types:
+            continue
+        label = stype.replace("RWD_", "").lower()
+        result[label] = {
+            "distance_km": round(s.get("distance", 0) / 1000, 2),
+            "duration_seconds": round(s.get("duration", 0), 1),
+            "avg_speed_mps": s.get("averageSpeed"),
+            "elevation_gain": round(s.get("totalAscent", 0) / 100, 1),
+            "elevation_loss": s.get("elevationLoss"),
+        }
+    return result or None
+
+
 def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
     """Extract key running fields from an activity."""
     distance_m = activity.get("distance", 0)
@@ -81,6 +106,13 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
         "is_pr": activity.get("pr"),
         "max_temperature": activity.get("maxTemperature"),
         "min_temperature": activity.get("minTemperature"),
+        # Trail running fields
+        "avg_grade_adjusted_pace": _format_pace(
+            (1000 / activity["avgGradeAdjustedSpeed"]) if activity.get("avgGradeAdjustedSpeed") else None
+        ),
+        "max_vertical_speed": activity.get("maxVerticalSpeed"),
+        "water_estimated_ml": activity.get("waterEstimated"),
+        "split_summary": _build_split_summary(activity.get("splitSummaries")),
     }
 
 
@@ -183,6 +215,17 @@ def register(mcp: FastMCP):
             "min_temperature": summary.get("minTemperature"),
             "steps": summary.get("steps"),
             "description": activity.get("description"),
+            # Trail running fields
+            "avg_grade_adjusted_pace": _format_pace(
+                (1000 / summary["avgGradeAdjustedSpeed"]) if summary.get("avgGradeAdjustedSpeed") else None
+            ),
+            "max_vertical_speed": summary.get("maxVerticalSpeed"),
+            "water_estimated_ml": summary.get("waterEstimated"),
+            "impact_load": summary.get("impactLoad"),
+            "begin_potential_stamina": summary.get("beginPotentialStamina"),
+            "end_potential_stamina": summary.get("endPotentialStamina"),
+            "min_available_stamina": summary.get("minAvailableStamina"),
+            "split_summary": _build_split_summary(activity.get("splitSummaries")),
         }
 
     @mcp.tool()
@@ -198,3 +241,81 @@ def register(mcp: FastMCP):
         client = get_client()
         splits = client.get_activity_splits(activity_id)
         return strip_pii(splits)
+
+    @mcp.tool()
+    def get_activity_weather(activity_id: int) -> dict[str, Any]:
+        """Get weather conditions during a running activity.
+        Returns temperature, humidity, wind, and weather description.
+        Useful for trail running analysis where weather impacts performance.
+
+        Args:
+            activity_id: The Garmin activity ID
+        """
+        from garmin_mcp import get_client
+
+        client = get_client()
+        weather = client.get_activity_weather(activity_id)
+        weather = strip_pii(weather)
+        # Remove location fields from weather (station coordinates approximate user location)
+        weather.pop("latitude", None)
+        weather.pop("longitude", None)
+        return weather
+
+    @mcp.tool()
+    def get_activity_typed_splits(activity_id: int) -> dict[str, Any]:
+        """Get ClimbPro and terrain-typed splits for a running activity.
+        Returns climb segments with grade, difficulty rating, elevation data,
+        and grade-adjusted pace. Essential for trail running analysis.
+
+        Each split includes:
+        - type: CLIMB_PRO_CYCLING_CLIMB or CLIMB_PRO_CYCLING_CLIMB_SECTION
+        - climbProDifficulty: DESCENT, LOW, MODERATE, STEEP, STEEPER, STEEPEST,
+          or cycling-style categories (FOURTH_CATEGORY to HC)
+        - averageGrade, maxGrade: slope percentage
+        - avgGradeAdjustedSpeed: grade-adjusted speed (m/s)
+        - elevationGain, elevationLoss, startElevation
+
+        Args:
+            activity_id: The Garmin activity ID
+        """
+        from garmin_mcp import get_client
+
+        client = get_client()
+        data = client.get_activity_typed_splits(activity_id)
+
+        # Summarize the splits to reduce response size
+        splits = data.get("splits", [])
+        climb_splits = []
+        for s in splits:
+            stype = s.get("type", "")
+            # Only include climb segments, skip RWD/INTERVAL
+            if "CLIMB" not in stype:
+                continue
+            gap_speed = s.get("avgGradeAdjustedSpeed")
+            gap_pace = _format_pace((1000 / gap_speed) if gap_speed and gap_speed > 0 else None)
+            avg_speed = s.get("averageSpeed")
+            actual_pace = _format_pace((1000 / avg_speed) if avg_speed and avg_speed > 0 else None)
+
+            climb_splits.append({
+                "type": stype,
+                "difficulty": s.get("climbProDifficulty"),
+                "distance_km": round(s.get("distance", 0) / 1000, 2),
+                "duration_seconds": round(s.get("duration", 0), 1),
+                "elevation_gain": s.get("elevationGain"),
+                "elevation_loss": s.get("elevationLoss"),
+                "start_elevation": s.get("startElevation"),
+                "avg_grade": s.get("averageGrade"),
+                "max_grade": s.get("maxGrade"),
+                "actual_pace": actual_pace,
+                "grade_adjusted_pace": gap_pace,
+                "avg_heart_rate": s.get("averageHR"),
+                "max_heart_rate": s.get("maxHR"),
+                "avg_power": s.get("averagePower"),
+                "avg_cadence": s.get("averageRunCadence"),
+            })
+
+        return {
+            "activity_id": data.get("activityId"),
+            "total_climb_splits": len(climb_splits),
+            "splits": climb_splits,
+        }

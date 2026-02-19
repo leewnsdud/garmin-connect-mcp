@@ -17,7 +17,7 @@ src/garmin_mcp/
   sanitize.py          # PII filtering (strips owner info, GPS coordinates)
   tools/
     __init__.py        # Tool module registration
-    activities.py      # Activity query/detail (4 tools)
+    activities.py      # Activity query/detail/weather/climbs (6 tools)
     summary.py         # Weekly/monthly summary (2 tools)
     training.py        # Training metrics (5 tools)
     heart_rate.py      # Heart rate/HRV (3 tools)
@@ -51,11 +51,11 @@ MCP clients (e.g. Claude Desktop) must restart the server process to pick up new
 
 ## MCP tools reference
 
-22 tools total. All date parameters use `YYYY-MM-DD` format, defaulting to today.
+24 tools total. All date parameters use `YYYY-MM-DD` format, defaulting to today.
 
 ---
 
-### Activities (4 tools)
+### Activities (6 tools)
 
 #### `get_recent_activities`
 
@@ -115,10 +115,18 @@ Get my last 2 running activities
     "lap_count": 6,
     "is_pr": false,
     "max_temperature": 30,
-    "min_temperature": 17
+    "min_temperature": 17,
+    "avg_grade_adjusted_pace": "5:37",
+    "max_vertical_speed": 0.8,
+    "water_estimated_ml": 538.0,
+    "split_summary": {
+      "run": { "distance_km": 5.76, "duration_seconds": 1948.7, "avg_speed_mps": 2.96, "elevation_gain": 0.1, "elevation_loss": 10.0 }
+    }
   }
 ]
 ```
+
+> **Trail running fields:** `avg_grade_adjusted_pace` is the Grade Adjusted Pace (GAP) - what your effort would equate to on flat terrain. `split_summary` contains Garmin's Run/Walk Detection (RWD) breakdown with `run`, `walk`, and `stand` segments. These are especially useful for trail running analysis. Fields are `null` when not applicable.
 
 #### `get_activities_by_date`
 
@@ -179,9 +187,19 @@ Get details for activity 21892408004
   "max_temperature": 30,
   "min_temperature": 17,
   "steps": 5692,
-  "description": null
+  "description": null,
+  "avg_grade_adjusted_pace": "5:37",
+  "max_vertical_speed": 0.8,
+  "water_estimated_ml": 538.0,
+  "impact_load": null,
+  "begin_potential_stamina": 100.0,
+  "end_potential_stamina": 85.0,
+  "min_available_stamina": 85.0,
+  "split_summary": null
 }
 ```
+
+> **Trail running detail fields:** `impact_load` measures cumulative impact stress (higher on trails). `begin/end/min_potential_stamina` tracks real-time stamina (100% = fresh, 0% = depleted). `split_summary` contains RWD (Run/Walk Detection) breakdown when available.
 
 #### `get_activity_splits`
 
@@ -229,6 +247,102 @@ Get splits for activity 21892408004
 ```
 
 > Note: Speed is in m/s. To convert to pace (min:sec/km), use `1000 / speed / 60` for minutes.
+
+#### `get_activity_weather`
+
+Returns weather conditions during a running activity. Useful for trail running where weather significantly impacts performance and safety.
+
+**Parameters:** `activity_id: int`
+**Returns:** `dict`
+
+**Example request:**
+```
+What was the weather during my trail run (activity 20511877245)?
+```
+
+**Example response:**
+```json
+{
+  "issueDate": "2025-09-26T22:00:00.000+00:00",
+  "temp": 68,
+  "apparentTemp": 68,
+  "dewPoint": 63,
+  "relativeHumidity": 84,
+  "windDirection": 110,
+  "windDirectionCompassPoint": "ese",
+  "windSpeed": 3,
+  "windGust": null,
+  "weatherStationDTO": {
+    "id": "47173",
+    "name": "47173"
+  },
+  "weatherTypeDTO": {
+    "desc": "Cloudy"
+  }
+}
+```
+
+> `temp`, `apparentTemp`, `dewPoint` are in **Fahrenheit**. `windSpeed` is in mph. Location coordinates are stripped for privacy.
+
+#### `get_activity_typed_splits`
+
+Returns ClimbPro terrain-typed splits with climb grades, difficulty ratings, and grade-adjusted pace. Essential for trail running analysis. Each split represents a climb or descent segment detected by Garmin's ClimbPro algorithm.
+
+**Parameters:** `activity_id: int`
+**Returns:** `dict`
+
+**Example request:**
+```
+Show the climb segments for my trail run (activity 20511877245)
+```
+
+**Example response (abbreviated):**
+```json
+{
+  "activity_id": 20511877245,
+  "total_climb_splits": 331,
+  "splits": [
+    {
+      "type": "CLIMB_PRO_CYCLING_CLIMB",
+      "difficulty": "FOURTH_CATEGORY",
+      "distance_km": 1.74,
+      "duration_seconds": 859.0,
+      "elevation_gain": 121.0,
+      "elevation_loss": 2.2,
+      "start_elevation": 412.2,
+      "avg_grade": 6.94,
+      "max_grade": 17.33,
+      "actual_pace": "8:13",
+      "grade_adjusted_pace": "6:32",
+      "avg_heart_rate": 138,
+      "max_heart_rate": 147,
+      "avg_power": 281,
+      "avg_cadence": 152.3
+    },
+    {
+      "type": "CLIMB_PRO_CYCLING_CLIMB",
+      "difficulty": "NONE",
+      "distance_km": 0.58,
+      "duration_seconds": 382.0,
+      "elevation_gain": 75.0,
+      "elevation_loss": 0.6,
+      "start_elevation": 485.2,
+      "avg_grade": 12.65,
+      "max_grade": 24.0,
+      "actual_pace": "10:53",
+      "grade_adjusted_pace": "6:43",
+      "avg_heart_rate": 132,
+      "max_heart_rate": 137,
+      "avg_power": 244,
+      "avg_cadence": 121.9
+    }
+  ]
+}
+```
+
+> **Difficulty ratings:** DESCENT, LOW, MODERATE, STEEP, STEEPER, STEEPEST, or cycling-style categories (FOURTH_CATEGORY, THIRD_CATEGORY, SECOND_CATEGORY, FIRST_CATEGORY, HC).
+> **Grade Adjusted Pace (GAP):** `grade_adjusted_pace` shows what the effort equates to on flat terrain. Compare with `actual_pace` to see elevation impact. Example: 8:13 actual on 6.9% grade = 6:32 GAP.
+> **Split types:** `CLIMB_PRO_CYCLING_CLIMB` = full climb segment, `CLIMB_PRO_CYCLING_CLIMB_SECTION` = sub-section within a climb.
 
 ---
 
@@ -815,6 +929,7 @@ This server provides data to support the following training methodologies:
 | **80/20 Training** | `get_activity_hr_zones`, `get_weekly_running_summary` |
 | **Hanson's Method** | `get_weekly_running_summary`, `get_monthly_running_summary`, `get_activity_splits` |
 | **Pfitzinger** | `get_weekly_running_summary`, `get_monthly_running_summary`, `get_recent_activities` |
+| **Trail/Ultra analysis** | `get_activity_typed_splits`, `get_activity_weather`, `get_recent_activities`, `get_running_gear` |
 
 ### Methodology usage patterns
 
@@ -823,6 +938,14 @@ This server provides data to support the following training methodologies:
 2. Call `get_vo2max_and_fitness` for current VO2max
 3. Calculate VDOT from race times, derive training paces (Easy, Marathon, Threshold, Interval, Repetition)
 4. Create workouts with `create_running_workout` using calculated pace targets
+
+**Trail running performance analysis:**
+1. Call `get_recent_activities` to find trail runs (type = `trail_running`)
+2. Check `split_summary` for run/walk/stand ratio (e.g. 55% running, 42% walking, 3% standing)
+3. Compare `avg_pace` vs `avg_grade_adjusted_pace` to quantify elevation impact
+4. Call `get_activity_typed_splits` for per-climb grade analysis and GAP
+5. Call `get_activity_weather` for weather conditions
+6. Call `get_running_gear` to check trail shoe mileage
 
 **80/20 intensity distribution analysis:**
 1. Call `get_recent_activities` for recent runs
