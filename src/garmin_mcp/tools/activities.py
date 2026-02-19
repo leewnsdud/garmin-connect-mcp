@@ -44,10 +44,12 @@ def _build_split_summary(split_summaries: list[dict[str, Any]] | None) -> dict[s
         if stype not in rwd_types:
             continue
         label = stype.replace("RWD_", "").lower()
+        avg_speed = s.get("averageSpeed")
+        avg_pace = _format_pace((1000 / avg_speed) if avg_speed and avg_speed > 0 else None)
         result[label] = {
             "distance_km": round(s.get("distance", 0) / 1000, 2),
             "duration_seconds": round(s.get("duration", 0), 1),
-            "avg_speed_mps": s.get("averageSpeed"),
+            "avg_pace": avg_pace,
             "elevation_gain": round(s.get("totalAscent", 0) / 100, 1),
             "elevation_loss": s.get("elevationLoss"),
         }
@@ -240,7 +242,24 @@ def register(mcp: FastMCP):
 
         client = get_client()
         splits = client.get_activity_splits(activity_id)
-        return strip_pii(splits)
+        splits = strip_pii(splits)
+
+        # Convert speed fields to pace in each lap
+        for lap in splits.get("lapDTOs", []):
+            for speed_key, pace_key in [
+                ("averageSpeed", "avg_pace"),
+                ("averageMovingSpeed", "avg_moving_pace"),
+                ("maxSpeed", "max_pace"),
+                ("avgGradeAdjustedSpeed", "grade_adjusted_pace"),
+            ]:
+                speed = lap.pop(speed_key, None)
+                lap[pace_key] = _format_pace(
+                    (1000 / speed) if speed and speed > 0 else None
+                )
+            # maxVerticalSpeed is vertical climbing rate (m/s), not running speed
+            # Keep as-is since it's not a pace metric
+
+        return splits
 
     @mcp.tool()
     def get_activity_weather(activity_id: int) -> dict[str, Any]:
