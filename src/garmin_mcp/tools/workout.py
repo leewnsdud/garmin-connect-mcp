@@ -85,15 +85,24 @@ def _build_end_condition(step_def: dict[str, Any]) -> tuple[dict[str, Any], floa
     Supports duration_seconds (time-based) and distance_meters (distance-based).
     Returns (end_condition_dict, end_condition_value).
     """
-    from garminconnect.workout import ConditionType
+    # IMPORTANT: garminconnect library ConditionType constants are WRONG for some IDs.
+    # Actual Garmin API condition type mapping (verified by upload + re-fetch):
+    #   1 = lap.button       (library says DISTANCE - WRONG)
+    #   2 = time             (library says TIME - correct)
+    #   3 = distance         (library says HEART_RATE - WRONG)
+    #   4 = calories         (library says CALORIES - correct)
+    #   5 = power            (library says CADENCE - WRONG)
+    #   6 = heart.rate       (library says POWER - WRONG)
+    #   7 = iterations       (library says ITERATIONS - correct)
+    #   8 = fixed.rest
 
     distance = step_def.get("distance_meters")
     if distance is not None and distance > 0:
         return (
             {
-                "conditionTypeId": ConditionType.DISTANCE,
+                "conditionTypeId": 3,
                 "conditionTypeKey": "distance",
-                "displayOrder": ConditionType.DISTANCE,
+                "displayOrder": 3,
                 "displayable": True,
             },
             float(distance),
@@ -102,9 +111,9 @@ def _build_end_condition(step_def: dict[str, Any]) -> tuple[dict[str, Any], floa
     duration = step_def.get("duration_seconds", 300)
     return (
         {
-            "conditionTypeId": ConditionType.TIME,
+            "conditionTypeId": 2,
             "conditionTypeKey": "time",
-            "displayOrder": ConditionType.TIME,
+            "displayOrder": 2,
             "displayable": True,
         },
         float(duration),
@@ -127,7 +136,6 @@ def _build_steps(steps: list[dict[str, Any]], start_order: int = 1) -> tuple[lis
     """
     from garminconnect.workout import (
         ExecutableStep,
-        TargetType,
         create_repeat_group,
     )
 
@@ -144,9 +152,9 @@ def _build_steps(steps: list[dict[str, Any]], start_order: int = 1) -> tuple[lis
 
             if target_type is None:
                 target_type = {
-                    "workoutTargetTypeId": TargetType.NO_TARGET,
+                    "workoutTargetTypeId": 1,
                     "workoutTargetTypeKey": "no.target",
-                    "displayOrder": TargetType.NO_TARGET,
+                    "displayOrder": 1,
                 }
 
             s = ExecutableStep(
