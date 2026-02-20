@@ -9,6 +9,7 @@ PII_KEYS = frozenset({
     "ownerProfileImageUrlLarge",
     "ownerProfileImageUrlMedium",
     "ownerProfileImageUrlSmall",
+    "userId",
     "userProfilePK",
     "userProfilePk",
     "userProfileId",

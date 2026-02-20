@@ -110,17 +110,53 @@ All distance values are in kilometers unless otherwise noted.
 |-----------|------|---------|-------------|
 | `activity_id` | int | (required) | Garmin activity ID |
 
-**Response:** `dict` — same fields as `get_recent_activities` plus:
+**Response:** `dict` — extracted from Garmin detail API (`summaryDTO`). Shares most field names with the list tool but uses the detail API's nested structure. Key differences from list tool noted below.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `min_heart_rate` | int\|null | Minimum heart rate (bpm) |
-| `avg_temperature` | int\|null | Average temperature (°C) |
-| `description` | str\|null | User-entered activity notes |
-| `impact_load` | float\|null | Cumulative impact stress (trail running) |
-| `begin_potential_stamina` | float\|null | Stamina at start (0-100%) |
-| `end_potential_stamina` | float\|null | Stamina at end (0-100%) |
-| `min_available_stamina` | float\|null | Lowest stamina during activity (0-100%) |
+| `activity_id` | int | Garmin activity ID |
+| `name` | str | Activity name |
+| `date` | str | `"YYYY-MM-DD HH:MM:SS"` |
+| `type` | str | Activity type key |
+| `distance_km` | float | Total distance |
+| `duration_seconds` | float | Total elapsed time |
+| `avg_pace` | str | Average pace `"mm:ss"` |
+| `avg_heart_rate` | int\|null | Average heart rate |
+| `max_heart_rate` | int\|null | Maximum heart rate |
+| `min_heart_rate` | int\|null | Minimum heart rate (detail only) |
+| `avg_cadence` | float\|null | Average cadence |
+| `max_cadence` | float\|null | Maximum cadence |
+| `calories` | int\|null | Calories burned |
+| `elevation_gain` | float\|null | Total ascent (m) |
+| `elevation_loss` | float\|null | Total descent (m) |
+| `min_elevation` | float\|null | Minimum altitude |
+| `max_elevation` | float\|null | Maximum altitude |
+| `avg_power` | int\|null | Average running power (W) |
+| `max_power` | int\|null | Maximum running power (W) |
+| `normalized_power` | int\|null | Normalized power (W) |
+| `training_effect_aerobic` | float\|null | Aerobic training effect |
+| `training_effect_anaerobic` | float\|null | Anaerobic training effect |
+| `training_load` | float\|null | Training load score |
+| `training_label` | str\|null | Training effect label (note: `training_label` not `training_effect_label`) |
+| `avg_stride_length` | float\|null | Stride length (note: no `_cm` suffix) |
+| `avg_vertical_oscillation` | float\|null | Vertical oscillation (note: no `_cm` suffix) |
+| `avg_ground_contact_time` | float\|null | Ground contact time (note: no `_ms` suffix) |
+| `avg_vertical_ratio` | float\|null | Vertical ratio (%) |
+| `avg_temperature` | int\|null | Average temperature (°C, detail only) |
+| `max_temperature` | int\|null | Max temperature (°C) |
+| `min_temperature` | int\|null | Min temperature (°C) |
+| `steps` | int\|null | Total steps |
+| `description` | str\|null | User-entered activity notes (detail only) |
+| `avg_grade_adjusted_pace` | str\|null | Grade Adjusted Pace `"mm:ss"` |
+| `max_vertical_speed` | float\|null | Max vertical speed (m/s) |
+| `water_estimated_ml` | float\|null | Estimated water (ml) |
+| `impact_load` | float\|null | Cumulative impact stress (detail only) |
+| `begin_potential_stamina` | float\|null | Stamina at start 0-100% (detail only) |
+| `end_potential_stamina` | float\|null | Stamina at end 0-100% (detail only) |
+| `min_available_stamina` | float\|null | Lowest stamina 0-100% (detail only) |
+| `split_summary` | dict\|null | RWD breakdown |
+
+> **Note:** The detail tool uses slightly different field names than the list tool for running dynamics: `avg_stride_length` (vs `avg_stride_length_cm`), `avg_ground_contact_time` (vs `avg_ground_contact_time_ms`), `avg_vertical_oscillation` (vs `avg_vertical_oscillation_cm`), and `training_label` (vs `training_effect_label`). The detail tool also lacks some list-only fields: `moving_duration_seconds`, `max_pace`, `fastest_split_*`, `hr_zone_*_seconds`, `lap_count`, `is_pr`.
 
 ---
 
@@ -419,7 +455,7 @@ No parameters.
 | Field | Type | Description |
 |-------|------|-------------|
 | `heart_rates` | dict | Hourly/granular HR data |
-| `resting_heart_rate` | int\|null | Resting HR for the day |
+| `resting_heart_rate` | dict\|null | Resting HR data (nested structure with `allMetrics.metricsMap`) |
 
 ---
 
@@ -483,7 +519,7 @@ No parameters.
 |-------|------|-------------|
 | `date` | str | ISO date |
 | `stress` | dict\|null | Stress data (`maxStressLevel`, `avgStressLevel`) |
-| `body_battery` | dict\|null | Body Battery (`charged`, `drained`) |
+| `body_battery` | list[dict]\|null | Body Battery (list with `charged`, `drained` fields) |
 | `spo2` | dict\|null | Blood oxygen (`lastSevenDaysAvgSpO2`) |
 | `respiration` | dict\|null | Respiration rate (`lowestRespirationValue`, `highestRespirationValue`, `avgWakingRespirationValue`) |
 
@@ -663,7 +699,7 @@ Exception: `maxVerticalSpeed` is kept as m/s since it represents climbing rate, 
 ### PII Filtering
 
 The `sanitize.strip_pii()` function recursively removes from all API responses:
-- Owner info: `ownerId`, `ownerFullName`, `ownerDisplayName`, profile image URLs
+- Owner info: `ownerId`, `ownerFullName`, `ownerDisplayName`, `userId`, profile image URLs
 - Profile IDs: `userProfilePK`, `userProfilePk`, `userProfileId`, `profileId`, `profileNumber`
 - User details: `displayName`, `fullName`, `userPro`, `userRoles`
 - GPS coordinates: `startLatitude`, `startLongitude`, `endLatitude`, `endLongitude`

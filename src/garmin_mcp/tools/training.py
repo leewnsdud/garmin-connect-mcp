@@ -21,7 +21,7 @@ def register(mcp: FastMCP):
 
         client = get_client()
         d = date or today_str()
-        return client.get_training_status(d)
+        return strip_pii(client.get_training_status(d))
 
     @mcp.tool()
     def get_training_readiness(date: str = "") -> list[dict[str, Any]]:
@@ -57,10 +57,10 @@ def register(mcp: FastMCP):
         except Exception:
             fitness_age = None
 
-        return {
+        return strip_pii({
             "max_metrics": max_metrics,
             "fitness_age": fitness_age,
-        }
+        })
 
     @mcp.tool()
     def get_race_predictions() -> dict[str, Any]:
@@ -70,7 +70,7 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        return client.get_race_predictions()
+        return strip_pii(client.get_race_predictions())
 
     @mcp.tool()
     def get_lactate_threshold(

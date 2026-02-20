@@ -46,7 +46,7 @@ def register(mcp: FastMCP):
 
         client = get_client()
         d = date or today_str()
-        return client.get_hrv_data(d)
+        return strip_pii(client.get_hrv_data(d))
 
     @mcp.tool()
     def get_activity_hr_zones(activity_id: int) -> dict[str, Any]:

@@ -4,6 +4,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from garmin_mcp.sanitize import strip_pii
+
 
 def register(mcp: FastMCP):
     @mcp.tool()
@@ -15,7 +17,7 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        return client.get_personal_record()
+        return strip_pii(client.get_personal_record())
 
     @mcp.tool()
     def get_goals(status: str = "active") -> list[dict[str, Any]]:
@@ -27,4 +29,4 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        return client.get_goals(status=status)
+        return strip_pii(client.get_goals(status=status))

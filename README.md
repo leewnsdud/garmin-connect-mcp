@@ -262,7 +262,7 @@ uv sync --reinstall-package garmin-mcp
 
 모든 Garmin API 응답에서 다음 개인정보 필드가 자동으로 제거됩니다:
 
-- **소유자 정보**: `ownerId`, `ownerFullName`, `ownerDisplayName`, 프로필 이미지 URL
+- **소유자 정보**: `ownerId`, `ownerFullName`, `ownerDisplayName`, `userId`, 프로필 이미지 URL
 - **프로필 ID**: `userProfilePK`, `userProfileId`, `profileId`, `profileNumber`
 - **사용자 정보**: `displayName`, `fullName`, `userPro`, `userRoles`
 - **GPS 좌표**: `startLatitude`, `startLongitude`, `endLatitude`, `endLongitude`

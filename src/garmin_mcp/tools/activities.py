@@ -46,11 +46,21 @@ def _build_split_summary(split_summaries: list[dict[str, Any]] | None) -> dict[s
         label = stype.replace("RWD_", "").lower()
         avg_speed = s.get("averageSpeed")
         avg_pace = _format_pace((1000 / avg_speed) if avg_speed and avg_speed > 0 else None)
+        # List API uses totalAscent (centimeters), detail API uses elevationGain (meters)
+        total_ascent = s.get("totalAscent")
+        elevation_gain_val = s.get("elevationGain")
+        if total_ascent is not None:
+            elev_gain = round(total_ascent / 100, 1)
+        elif elevation_gain_val is not None:
+            elev_gain = round(elevation_gain_val, 1)
+        else:
+            elev_gain = 0.0
+
         result[label] = {
             "distance_km": round(s.get("distance", 0) / 1000, 2),
             "duration_seconds": round(s.get("duration", 0), 1),
             "avg_pace": avg_pace,
-            "elevation_gain": round(s.get("totalAscent", 0) / 100, 1),
+            "elevation_gain": elev_gain,
             "elevation_loss": s.get("elevationLoss"),
         }
     return result or None

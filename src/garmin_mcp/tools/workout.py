@@ -32,12 +32,14 @@ def _build_target(target: dict[str, Any] | None) -> tuple[dict[str, Any] | None,
         min_pace = target.get("min", "")
         max_pace = target.get("max", "")
         if min_pace and max_pace:
-            # Garmin uses speed (m/s) with pace.zone target type
-            # min pace (slower) = lower speed, max pace (faster) = higher speed
+            # Garmin expects targetValueOne <= targetValueTwo (low speed to high speed)
+            # Slower pace = lower speed, faster pace = higher speed
+            speed_a = _parse_pace_to_speed(min_pace)
+            speed_b = _parse_pace_to_speed(max_pace)
             return (
                 {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone", "displayOrder": 6},
-                _parse_pace_to_speed(min_pace),
-                _parse_pace_to_speed(max_pace),
+                min(speed_a, speed_b),
+                max(speed_a, speed_b),
             )
     elif target_type == "heart_rate":
         min_hr = target.get("min", 0)

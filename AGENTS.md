@@ -1071,7 +1071,7 @@ Always verify actual return types and match MCP tool type hints accordingly.
 
 The `sanitize.strip_pii()` function recursively removes the following keys from all API responses:
 
-- Owner info: `ownerId`, `ownerFullName`, `ownerDisplayName`, profile image URLs
+- Owner info: `ownerId`, `ownerFullName`, `ownerDisplayName`, `userId`, profile image URLs
 - Profile IDs: `userProfilePK`, `userProfilePk`, `userProfileId`, `profileId`, `profileNumber`
 - User details: `displayName`, `fullName`, `userPro`, `userRoles`
 - GPS coordinates: `startLatitude`, `startLongitude`, `endLatitude`, `endLongitude`
