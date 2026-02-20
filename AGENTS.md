@@ -795,7 +795,7 @@ Create a 4x1km distance-based interval workout at 4:20-4:40/km pace with 2min re
 }
 ```
 
-> Steps support two end conditions: `duration_seconds` (time-based) or `distance_meters` (distance-based). You can mix both in the same workout (e.g., time-based warmup + distance-based intervals).
+> Steps support three end conditions: `duration_seconds` (time-based), `distance_meters` (distance-based), or neither (lap button — press lap to advance). You can mix them in the same workout (e.g., lap-button warmup + distance-based intervals + time-based recovery).
 
 #### `get_workouts`
 
@@ -882,14 +882,15 @@ Detailed reference for the `create_running_workout` `steps` parameter.
 
 ### End conditions (step duration)
 
-Each step (except `repeat`) must have exactly one end condition:
+Each step (except `repeat`) uses one of three end conditions:
 
 | Field | Type | Description | Example |
 |-------|------|-------------|---------|
 | `duration_seconds` | int | Time-based end condition | `"duration_seconds": 300` (5 min) |
 | `distance_meters` | int | Distance-based end condition | `"distance_meters": 1000` (1 km) |
+| _(neither)_ | - | Lap button — press lap to advance | `{"type": "warmup"}` |
 
-If both are provided, `distance_meters` takes priority. You can mix time-based and distance-based steps in the same workout.
+Priority: `distance_meters` > `duration_seconds` > lap button. You can mix all three in the same workout.
 
 ### Target types (optional)
 

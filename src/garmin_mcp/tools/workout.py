@@ -108,15 +108,27 @@ def _build_end_condition(step_def: dict[str, Any]) -> tuple[dict[str, Any], floa
             float(distance),
         )
 
-    duration = step_def.get("duration_seconds", 300)
+    duration = step_def.get("duration_seconds")
+    if duration is not None and duration > 0:
+        return (
+            {
+                "conditionTypeId": 2,
+                "conditionTypeKey": "time",
+                "displayOrder": 2,
+                "displayable": True,
+            },
+            float(duration),
+        )
+
+    # No duration or distance specified → lap button (press lap to advance)
     return (
         {
-            "conditionTypeId": 2,
-            "conditionTypeKey": "time",
-            "displayOrder": 2,
+            "conditionTypeId": 1,
+            "conditionTypeKey": "lap.button",
+            "displayOrder": 1,
             "displayable": True,
         },
-        float(duration),
+        0.0,
     )
 
 
@@ -221,7 +233,8 @@ def register(mcp: FastMCP):
         The workout will be synced to your Garmin watch.
 
         Each step has a 'type' (warmup, interval, recovery, rest, cooldown, repeat)
-        and either 'duration_seconds' (time-based) or 'distance_meters' (distance-based).
+        and either 'duration_seconds' (time-based), 'distance_meters' (distance-based),
+        or neither (lap button - press lap to advance to next step).
         Repeat steps have 'count' and nested 'steps'.
         Optionally set a 'target' with type (pace, heart_rate, cadence, power) and min/max values.
         Each step can have a 'description' for notes.
