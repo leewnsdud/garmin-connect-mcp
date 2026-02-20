@@ -13,8 +13,8 @@ Claude Desktop 등 MCP 클라이언트와 연동하여 러닝 훈련 분석, 계
 - **심박/HRV** - 일간 심박, 심박변이도, 활동별 심박존 분포
 - **웰니스** - 수면, 스트레스, 바디배터리, SpO2
 - **개인 기록/목표** - PR, 피트니스 목표
-- **워크아웃 생성** - 인터벌, 템포 등 구조화된 워크아웃을 Garmin 워치에 전송
-- **러닝화 관리** - 신발별 누적 거리 추적
+- **워크아웃 생성** - 시간/거리 기반 인터벌, 템포 등 구조화된 워크아웃을 Garmin 워치에 전송 (페이스/심박/케이던스/파워 타겟)
+- **러닝화 관리** - 신발별 누적 거리 + 마모율 추적
 - **개인정보 보호** - 모든 API 응답에서 PII(소유자 이름, 프로필 ID, GPS 좌표) 자동 필터링
 
 ## 요구 사항
@@ -135,7 +135,7 @@ uv run python scripts/auth.py
 
 | 도구 | 설명 | 주요 파라미터 |
 |------|------|--------------|
-| `create_running_workout` | 워크아웃 생성 및 Garmin에 업로드 | `name`, `steps`, `description` |
+| `create_running_workout` | 워크아웃 생성 및 Garmin에 업로드 (시간/거리 기반, 페이스/심박/케이던스/파워 타겟) | `name`, `steps`, `description` |
 | `get_workouts` | 저장된 워크아웃 목록 | `count` (기본 20, 최대 100) |
 
 ### Gear
@@ -155,8 +155,18 @@ uv run python scripts/auth.py
 | `warmup` | 워밍업 |
 | `interval` | 인터벌 (고강도) |
 | `recovery` | 회복 조깅 |
+| `rest` | 완전 휴식 (서서 쉬기) |
 | `cooldown` | 쿨다운 |
 | `repeat` | 반복 그룹 |
+
+### 종료 조건 (Step 기간)
+
+| 필드 | 타입 | 설명 | 예시 |
+|------|------|------|------|
+| `duration_seconds` | int | 시간 기반 | `"duration_seconds": 300` (5분) |
+| `distance_meters` | int | 거리 기반 | `"distance_meters": 1000` (1km) |
+
+하나의 워크아웃에서 시간/거리 기반 step을 혼합 사용할 수 있습니다.
 
 ### Target 타입
 
@@ -165,6 +175,7 @@ uv run python scripts/auth.py
 | `pace` | min:sec/km | `"min": "4:30", "max": "4:50"` |
 | `heart_rate` | bpm | `"min": 140, "max": 155` |
 | `cadence` | spm | `"min": 170, "max": 185` |
+| `power` | watts | `"min": 280, "max": 320` |
 
 ### 옵션
 
@@ -172,7 +183,7 @@ uv run python scripts/auth.py
 - **Step 메모**: 각 step에 `"description": "메모"` 추가
 - **마지막 회복 건너뛰기**: repeat step에 `"skip_last_rest": true` 추가
 
-### 예시: 4x1km 인터벌
+### 예시: 4x1km 거리 기반 인터벌
 
 ```json
 {
@@ -191,7 +202,7 @@ uv run python scripts/auth.py
       "steps": [
         {
           "type": "interval",
-          "duration_seconds": 270,
+          "distance_meters": 1000,
           "target": { "type": "pace", "min": "4:20", "max": "4:40" },
           "description": "목표 페이스 유지"
         },
@@ -210,6 +221,8 @@ uv run python scripts/auth.py
   ]
 }
 ```
+
+> 상세 워크아웃 생성 가이드는 [AGENTS.md](./AGENTS.md#workout-creation-guide)를, 전체 도구 요청/응답 규격은 [TOOL_SPEC.md](./TOOL_SPEC.md)를 참조하세요.
 
 ## 활용 예시
 

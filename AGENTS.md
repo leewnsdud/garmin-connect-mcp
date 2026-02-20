@@ -763,10 +763,10 @@ Creates a structured running workout and uploads it to Garmin Connect. The worko
 
 **Example request:**
 ```
-Create a 4x1km interval workout at 4:20-4:40/km pace with 2min recovery
+Create a 4x1km distance-based interval workout at 4:20-4:40/km pace with 2min recovery
 ```
 
-**Example call:**
+**Example call (distance-based):**
 ```json
 {
   "name": "4x1km @4:30",
@@ -776,7 +776,7 @@ Create a 4x1km interval workout at 4:20-4:40/km pace with 2min recovery
     {
       "type": "repeat", "count": 4, "skip_last_rest": true,
       "steps": [
-        { "type": "interval", "duration_seconds": 270, "target": { "type": "pace", "min": "4:20", "max": "4:40" } },
+        { "type": "interval", "distance_meters": 1000, "target": { "type": "pace", "min": "4:20", "max": "4:40" } },
         { "type": "recovery", "duration_seconds": 120 }
       ]
     },
@@ -790,10 +790,12 @@ Create a 4x1km interval workout at 4:20-4:40/km pace with 2min recovery
 {
   "status": "created",
   "workout_name": "4x1km @4:30",
-  "estimated_duration_seconds": 2280,
+  "estimated_duration_seconds": 2880,
   "result": { "workoutId": 123456789, "workoutName": "4x1km @4:30" }
 }
 ```
+
+> Steps support two end conditions: `duration_seconds` (time-based) or `distance_meters` (distance-based). You can mix both in the same workout (e.g., time-based warmup + distance-based intervals).
 
 #### `get_workouts`
 
@@ -869,11 +871,25 @@ Detailed reference for the `create_running_workout` `steps` parameter.
 
 ### Step types
 
-- `warmup` - Warm-up phase
-- `interval` - High intensity interval
-- `recovery` - Recovery jog between intervals
-- `cooldown` - Cool-down phase
-- `repeat` - Repeat group (requires `count` and nested `steps`)
+| Type | Description |
+|------|-------------|
+| `warmup` | Warm-up phase |
+| `interval` | High intensity interval |
+| `recovery` | Recovery jog between intervals |
+| `rest` | Full rest (standing/walking stop) between intervals |
+| `cooldown` | Cool-down phase |
+| `repeat` | Repeat group (requires `count` and nested `steps`) |
+
+### End conditions (step duration)
+
+Each step (except `repeat`) must have exactly one end condition:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `duration_seconds` | int | Time-based end condition | `"duration_seconds": 300` (5 min) |
+| `distance_meters` | int | Distance-based end condition | `"distance_meters": 1000` (1 km) |
+
+If both are provided, `distance_meters` takes priority. You can mix time-based and distance-based steps in the same workout.
 
 ### Target types (optional)
 
@@ -883,17 +899,41 @@ Add a `target` object to any step to set an intensity target:
 {"type": "pace", "min": "4:30", "max": "4:50"}
 {"type": "heart_rate", "min": 140, "max": 155}
 {"type": "cadence", "min": 170, "max": 185}
+{"type": "power", "min": 280, "max": 320}
 ```
 
-- `pace`: min/max in `min:sec/km` format (string)
-- `heart_rate`: min/max in bpm (integer)
-- `cadence`: min/max in steps per minute (integer)
+| Target type | min/max unit | Format |
+|-------------|-------------|--------|
+| `pace` | min:sec per km | string `"4:30"` |
+| `heart_rate` | bpm | integer |
+| `cadence` | steps per minute | integer |
+| `power` | watts | integer |
 
 ### Options
 
 - **Workout description**: Top-level `description` parameter
 - **Step notes**: Add `"description": "note text"` to any step
 - **Skip last recovery**: Add `"skip_last_rest": true` to a repeat step to omit the final recovery
+
+### Example: distance-based intervals with pace target
+
+```json
+{
+  "name": "5x1km @4:30",
+  "description": "VO2max distance intervals",
+  "steps": [
+    { "type": "warmup", "distance_meters": 2000, "description": "Easy 2km jog" },
+    {
+      "type": "repeat", "count": 5, "skip_last_rest": true,
+      "steps": [
+        { "type": "interval", "distance_meters": 1000, "target": { "type": "pace", "min": "4:20", "max": "4:40" } },
+        { "type": "recovery", "duration_seconds": 120 }
+      ]
+    },
+    { "type": "cooldown", "distance_meters": 2000 }
+  ]
+}
+```
 
 ### Example: tempo run with HR target
 
@@ -909,7 +949,27 @@ Add a `target` object to any step to set an intensity target:
 }
 ```
 
-### Example: 6x800m with cadence target
+### Example: hill repeats with power target
+
+```json
+{
+  "name": "6x200m Hill",
+  "description": "Hill power repeats",
+  "steps": [
+    { "type": "warmup", "duration_seconds": 900 },
+    {
+      "type": "repeat", "count": 6, "skip_last_rest": true,
+      "steps": [
+        { "type": "interval", "distance_meters": 200, "target": { "type": "power", "min": 350, "max": 400 } },
+        { "type": "recovery", "duration_seconds": 180 }
+      ]
+    },
+    { "type": "cooldown", "duration_seconds": 600 }
+  ]
+}
+```
+
+### Example: 6x800m with cadence target and rest
 
 ```json
 {
@@ -919,8 +979,8 @@ Add a `target` object to any step to set an intensity target:
     {
       "type": "repeat", "count": 6, "skip_last_rest": true,
       "steps": [
-        { "type": "interval", "duration_seconds": 180, "target": { "type": "cadence", "min": 180, "max": 190 } },
-        { "type": "recovery", "duration_seconds": 180 }
+        { "type": "interval", "distance_meters": 800, "target": { "type": "cadence", "min": 180, "max": 190 } },
+        { "type": "rest", "duration_seconds": 90, "description": "Standing rest" }
       ]
     },
     { "type": "cooldown", "duration_seconds": 600 }
