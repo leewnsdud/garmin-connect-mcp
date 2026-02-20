@@ -1047,16 +1047,18 @@ When adding new tools, always verify actual API response keys.
 
 ### Garmin workout target type IDs
 
-The library (`garminconnect.workout`) `TargetType` constants do not match the actual Garmin API:
+**CRITICAL**: The `garminconnect.workout` library `TargetType` constants are almost entirely **WRONG**. Only cadence (3) is correct. This was verified by uploading test workouts and re-fetching them from Garmin to check the saved target types.
 
-| Purpose | Correct targetTypeId | targetTypeKey |
-|---------|---------------------|---------------|
-| No target | 1 | `no.target` |
-| Heart rate | 2 | `heart.rate.zone` |
-| Cadence | 3 | `cadence` |
-| Pace | **6** | `pace.zone` |
+| Purpose | Correct ID | targetTypeKey | Library says | Library correct? |
+|---------|-----------|---------------|-------------|-----------------|
+| No target | 1 | `no.target` | NO_TARGET = 1 | ✅ |
+| Power | **2** | `power.zone` | HEART_RATE = 2 | ❌ |
+| Cadence | 3 | `cadence.zone` | CADENCE = 3 | ✅ |
+| Heart rate | **4** | `heart.rate.zone` | SPEED = 4 | ❌ |
+| Speed | **5** | `speed.zone` | POWER = 5 | ❌ |
+| Pace | **6** | `pace.zone` | OPEN = 6 | ❌ |
 
-> The library defines `TargetType.SPEED = 4`, but actual pace targets require **6**. Using 4 causes Garmin to misinterpret pace values as heart rate values.
+> **Do NOT use `TargetType` enum values from the library.** Our code hardcodes the correct IDs directly. Using library constants will cause targets to be misinterpreted (e.g., heart rate target saved as power, pace target saved as heart rate).
 
 ### Return type pitfalls
 

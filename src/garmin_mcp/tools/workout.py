@@ -28,16 +28,23 @@ def _build_target(target: dict[str, Any] | None) -> tuple[dict[str, Any] | None,
 
     target_type = target.get("type", "no_target")
 
+    # IMPORTANT: garminconnect library TargetType constants are WRONG.
+    # Actual Garmin API target type mapping (verified by upload + re-fetch):
+    #   1 = no.target
+    #   2 = power.zone      (library says HEART_RATE - WRONG)
+    #   3 = cadence          (library says CADENCE - correct)
+    #   4 = heart.rate.zone  (library says SPEED - WRONG)
+    #   5 = speed.zone       (library says POWER - WRONG)
+    #   6 = pace.zone        (library says OPEN - WRONG)
     if target_type == "pace":
         min_pace = target.get("min", "")
         max_pace = target.get("max", "")
         if min_pace and max_pace:
             # Garmin expects targetValueOne <= targetValueTwo (low speed to high speed)
-            # Slower pace = lower speed, faster pace = higher speed
             speed_a = _parse_pace_to_speed(min_pace)
             speed_b = _parse_pace_to_speed(max_pace)
             return (
-                {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone", "displayOrder": 6},
+                {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone"},
                 min(speed_a, speed_b),
                 max(speed_a, speed_b),
             )
@@ -46,7 +53,7 @@ def _build_target(target: dict[str, Any] | None) -> tuple[dict[str, Any] | None,
         max_hr = target.get("max", 0)
         if min_hr and max_hr:
             return (
-                {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "heart.rate.zone"},
+                {"workoutTargetTypeId": 4, "workoutTargetTypeKey": "heart.rate.zone"},
                 float(min_hr),
                 float(max_hr),
             )
@@ -64,7 +71,7 @@ def _build_target(target: dict[str, Any] | None) -> tuple[dict[str, Any] | None,
         max_power = target.get("max", 0)
         if min_power and max_power:
             return (
-                {"workoutTargetTypeId": 5, "workoutTargetTypeKey": "power.zone"},
+                {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"},
                 float(min_power),
                 float(max_power),
             )
