@@ -1060,6 +1060,23 @@ When adding new tools, always verify actual API response keys.
 
 > **Do NOT use `TargetType` enum values from the library.** Our code hardcodes the correct IDs directly. Using library constants will cause targets to be misinterpreted (e.g., heart rate target saved as power, pace target saved as heart rate).
 
+### Garmin workout condition type IDs
+
+**CRITICAL**: The `garminconnect.workout` library `ConditionType` constants are also **WRONG** for several IDs. This was verified by uploading test workouts and re-fetching them from Garmin.
+
+| Purpose | Correct ID | conditionTypeKey | Library says | Library correct? |
+|---------|-----------|-----------------|-------------|-----------------|
+| Lap button | 1 | `lap.button` | DISTANCE = 1 | ❌ |
+| Time | 2 | `time` | TIME = 2 | ✅ |
+| Distance | **3** | `distance` | HEART_RATE = 3 | ❌ |
+| Calories | 4 | `calories` | CALORIES = 4 | ✅ |
+| Power | 5 | `power` | CADENCE = 5 | ❌ |
+| Heart rate | 6 | `heart.rate` | POWER = 6 | ❌ |
+| Iterations | 7 | `iterations` | ITERATIONS = 7 | ✅ |
+| Fixed rest | 8 | `fixed.rest` | (not defined) | - |
+
+> **Do NOT use `ConditionType` enum values from the library.** Our code hardcodes the correct IDs directly. Using `ConditionType.DISTANCE` (=1) will result in `lap.button` instead of distance-based end conditions.
+
 ### Return type pitfalls
 
 Some Garmin APIs return `list` when you might expect `dict`:
