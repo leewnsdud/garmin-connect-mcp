@@ -612,8 +612,8 @@ No parameters.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `type` | str | yes | `"warmup"`, `"cooldown"`, `"interval"`, `"recovery"`, `"rest"`, `"repeat"` |
-| `duration_seconds` | int | one of | Time-based end condition |
-| `distance_meters` | int | one of | Distance-based end condition |
+| `duration_seconds` | int | no | Time-based end condition |
+| `distance_meters` | int | no | Distance-based end condition (priority over duration) |
 | `target` | dict | no | Intensity target (see below) |
 | `description` | str | no | Step notes |
 
