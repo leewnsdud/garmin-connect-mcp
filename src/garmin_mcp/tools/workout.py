@@ -28,23 +28,32 @@ def _build_target(target: dict[str, Any] | None) -> tuple[dict[str, Any] | None,
 
     target_type = target.get("type", "no_target")
 
+    # IMPORTANT: garminconnect library TargetType constants are WRONG.
+    # Actual Garmin API target type mapping (verified by upload + re-fetch):
+    #   1 = no.target
+    #   2 = power.zone      (library says HEART_RATE - WRONG)
+    #   3 = cadence          (library says CADENCE - correct)
+    #   4 = heart.rate.zone  (library says SPEED - WRONG)
+    #   5 = speed.zone       (library says POWER - WRONG)
+    #   6 = pace.zone        (library says OPEN - WRONG)
     if target_type == "pace":
         min_pace = target.get("min", "")
         max_pace = target.get("max", "")
         if min_pace and max_pace:
-            # Garmin uses speed (m/s) with pace.zone target type
-            # min pace (slower) = lower speed, max pace (faster) = higher speed
+            # Garmin expects targetValueOne <= targetValueTwo (low speed to high speed)
+            speed_a = _parse_pace_to_speed(min_pace)
+            speed_b = _parse_pace_to_speed(max_pace)
             return (
-                {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone", "displayOrder": 6},
-                _parse_pace_to_speed(min_pace),
-                _parse_pace_to_speed(max_pace),
+                {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone"},
+                min(speed_a, speed_b),
+                max(speed_a, speed_b),
             )
     elif target_type == "heart_rate":
         min_hr = target.get("min", 0)
         max_hr = target.get("max", 0)
         if min_hr and max_hr:
             return (
-                {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "heart.rate.zone"},
+                {"workoutTargetTypeId": 4, "workoutTargetTypeKey": "heart.rate.zone"},
                 float(min_hr),
                 float(max_hr),
             )
@@ -57,8 +66,58 @@ def _build_target(target: dict[str, Any] | None) -> tuple[dict[str, Any] | None,
                 float(min_cad),
                 float(max_cad),
             )
+    elif target_type == "power":
+        min_power = target.get("min", 0)
+        max_power = target.get("max", 0)
+        if min_power and max_power:
+            return (
+                {"workoutTargetTypeId": 2, "workoutTargetTypeKey": "power.zone"},
+                float(min_power),
+                float(max_power),
+            )
 
     return None, None, None
+
+
+def _build_end_condition(step_def: dict[str, Any]) -> tuple[dict[str, Any], float]:
+    """Build end condition from step definition.
+
+    Supports duration_seconds (time-based) and distance_meters (distance-based).
+    Returns (end_condition_dict, end_condition_value).
+    """
+    from garminconnect.workout import ConditionType
+
+    distance = step_def.get("distance_meters")
+    if distance is not None and distance > 0:
+        return (
+            {
+                "conditionTypeId": ConditionType.DISTANCE,
+                "conditionTypeKey": "distance",
+                "displayOrder": ConditionType.DISTANCE,
+                "displayable": True,
+            },
+            float(distance),
+        )
+
+    duration = step_def.get("duration_seconds", 300)
+    return (
+        {
+            "conditionTypeId": ConditionType.TIME,
+            "conditionTypeKey": "time",
+            "displayOrder": ConditionType.TIME,
+            "displayable": True,
+        },
+        float(duration),
+    )
+
+
+_STEP_TYPE_MAP = {
+    "warmup": (1, "warmup"),
+    "cooldown": (2, "cooldown"),
+    "interval": (3, "interval"),
+    "recovery": (4, "recovery"),
+    "rest": (5, "rest"),
+}
 
 
 def _build_steps(steps: list[dict[str, Any]], start_order: int = 1) -> tuple[list[Any], int]:
@@ -67,33 +126,36 @@ def _build_steps(steps: list[dict[str, Any]], start_order: int = 1) -> tuple[lis
     Returns (list of step objects, next step order).
     """
     from garminconnect.workout import (
-        create_warmup_step,
-        create_interval_step,
-        create_recovery_step,
-        create_cooldown_step,
+        ExecutableStep,
+        TargetType,
         create_repeat_group,
     )
 
     result = []
     order = start_order
 
-    step_creators = {
-        "warmup": create_warmup_step,
-        "cooldown": create_cooldown_step,
-        "interval": create_interval_step,
-        "recovery": create_recovery_step,
-    }
-
     for step_def in steps:
         step_type = step_def.get("type", "interval")
-        duration = step_def.get("duration_seconds", 300)
-        target_type, val_one, val_two = _build_target(step_def.get("target"))
 
-        if step_type in step_creators:
-            s = step_creators[step_type](
-                duration_seconds=duration,
-                step_order=order,
-                target_type=target_type,
+        if step_type in _STEP_TYPE_MAP:
+            type_id, type_key = _STEP_TYPE_MAP[step_type]
+            end_condition, end_value = _build_end_condition(step_def)
+            target_type, val_one, val_two = _build_target(step_def.get("target"))
+
+            if target_type is None:
+                target_type = {
+                    "workoutTargetTypeId": TargetType.NO_TARGET,
+                    "workoutTargetTypeKey": "no.target",
+                    "displayOrder": TargetType.NO_TARGET,
+                }
+
+            s = ExecutableStep(
+                type="ExecutableStepDTO",
+                stepOrder=order,
+                stepType={"stepTypeId": type_id, "stepTypeKey": type_key, "displayOrder": type_id},
+                endCondition=end_condition,
+                endConditionValue=end_value,
+                targetType=target_type,
             )
             if val_one is not None:
                 s.targetValueOne = val_one
@@ -121,6 +183,25 @@ def _build_steps(steps: list[dict[str, Any]], start_order: int = 1) -> tuple[lis
     return result, order
 
 
+def _estimate_duration(steps_def: list[dict[str, Any]]) -> int:
+    """Estimate total workout duration in seconds.
+
+    For distance-based steps, uses a rough estimate of 5:00/km pace.
+    """
+    total = 0
+    for s in steps_def:
+        if s.get("type") == "repeat":
+            count = s.get("count", 1)
+            inner = _estimate_duration(s.get("steps", []))
+            total += count * inner
+        elif s.get("distance_meters"):
+            # Estimate: ~5:00/km = 300 sec/km
+            total += int(s["distance_meters"] / 1000 * 300)
+        else:
+            total += s.get("duration_seconds", 0)
+    return total
+
+
 def register(mcp: FastMCP):
     @mcp.tool()
     def create_running_workout(
@@ -131,17 +212,18 @@ def register(mcp: FastMCP):
         """Create a structured running workout and upload it to Garmin Connect.
         The workout will be synced to your Garmin watch.
 
-        Each step has a 'type' (warmup, interval, recovery, cooldown, repeat)
-        and 'duration_seconds'. Repeat steps have 'count' and nested 'steps'.
-        Optionally set a 'target' with type (pace, heart_rate, cadence) and min/max values.
+        Each step has a 'type' (warmup, interval, recovery, rest, cooldown, repeat)
+        and either 'duration_seconds' (time-based) or 'distance_meters' (distance-based).
+        Repeat steps have 'count' and nested 'steps'.
+        Optionally set a 'target' with type (pace, heart_rate, cadence, power) and min/max values.
         Each step can have a 'description' for notes.
         Repeat steps can have 'skip_last_rest': true to skip the last recovery step.
 
-        Example steps for a 4x1km interval workout:
+        Example steps for a 4x1km distance-based interval workout:
         [
             {"type": "warmup", "duration_seconds": 600, "description": "Easy jog"},
             {"type": "repeat", "count": 4, "skip_last_rest": true, "steps": [
-                {"type": "interval", "duration_seconds": 300, "target": {"type": "pace", "min": "4:30", "max": "4:50"}},
+                {"type": "interval", "distance_meters": 1000, "target": {"type": "pace", "min": "4:30", "max": "4:50"}},
                 {"type": "recovery", "duration_seconds": 120}
             ]},
             {"type": "cooldown", "duration_seconds": 600}
@@ -158,19 +240,6 @@ def register(mcp: FastMCP):
         client = get_client()
 
         workout_steps, _ = _build_steps(steps)
-
-        # Calculate estimated total duration
-        def _estimate_duration(steps_def: list[dict[str, Any]]) -> int:
-            total = 0
-            for s in steps_def:
-                if s.get("type") == "repeat":
-                    count = s.get("count", 1)
-                    inner = _estimate_duration(s.get("steps", []))
-                    total += count * inner
-                else:
-                    total += s.get("duration_seconds", 0)
-            return total
-
         estimated_duration = _estimate_duration(steps)
 
         segment = WorkoutSegment(
