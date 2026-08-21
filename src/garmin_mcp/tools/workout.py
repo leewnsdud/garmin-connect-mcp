@@ -286,6 +286,26 @@ def register(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def schedule_workout(workout_id: int, date: str) -> dict[str, Any]:
+        """Schedule an existing workout on a specific date in the Garmin training
+        calendar. The watch will show it as the workout of the day.
+
+        Args:
+            workout_id: Workout ID returned by create_running_workout or get_workouts
+            date: Target date in YYYY-MM-DD format
+        """
+        from garmin_mcp import get_client
+
+        client = get_client()
+        result = client.schedule_workout(workout_id, date)
+        return strip_pii({
+            "status": "scheduled",
+            "workout_id": workout_id,
+            "date": date,
+            "result": result,
+        })
+
+    @mcp.tool()
     def get_workouts(count: int = 20) -> list[dict[str, Any]]:
         """Get list of saved workouts from Garmin Connect.
 

@@ -189,3 +189,7 @@ class GarminClient:
 
     def upload_running_workout(self, workout: Any) -> dict[str, Any]:
         return self._call("upload_running_workout", workout)
+
+    def schedule_workout(self, workout_id: int, date_str: str) -> dict[str, Any]:
+        validate_date(date_str)
+        return self._call("schedule_workout", workout_id, date_str)
