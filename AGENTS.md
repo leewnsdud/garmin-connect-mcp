@@ -23,7 +23,7 @@ src/garmin_mcp/
     heart_rate.py      # Heart rate/HRV (3 tools)
     wellness.py        # Sleep/stress/body battery (3 tools)
     records.py         # PR/goals (2 tools)
-    workout.py         # Workout creation/listing (2 tools)
+    workout.py         # Workout creation/scheduling/listing (3 tools)
     gear.py            # Running shoe management (1 tool)
 scripts/
   auth.py              # Pre-auth CLI (run once for initial setup)
@@ -51,7 +51,7 @@ MCP clients (e.g. Claude Desktop) must restart the server process to pick up new
 
 ## MCP tools reference
 
-24 tools total. All date parameters use `YYYY-MM-DD` format, defaulting to today.
+25 tools total. All date parameters use `YYYY-MM-DD` format, defaulting to today.
 
 ---
 
@@ -752,7 +752,7 @@ Show my active fitness goals
 
 ---
 
-### Workout (2 tools)
+### Workout (3 tools)
 
 #### `create_running_workout`
 
@@ -796,6 +796,34 @@ Create a 4x1km distance-based interval workout at 4:20-4:40/km pace with 2min re
 ```
 
 > Steps support three end conditions: `duration_seconds` (time-based), `distance_meters` (distance-based), or neither (lap button — press lap to advance). You can mix them in the same workout (e.g., lap-button warmup + distance-based intervals + time-based recovery).
+
+#### `schedule_workout`
+
+Places an existing workout on a date in the Garmin training calendar. The watch shows it as the workout of the day.
+
+**Parameters:** `workout_id: int`, `date: str`
+**Returns:** `dict`
+
+**Example request:**
+```
+Schedule workout 1671357980 for 2026-09-05
+```
+
+**Example response:**
+```json
+{
+  "status": "scheduled",
+  "workout_id": 1671357980,
+  "date": "2026-09-05",
+  "result": {
+    "workoutScheduleId": 1751343760,
+    "calendarDate": "2026-09-05",
+    "workout": { "workoutId": 1671357980, "workoutName": "4x1km @4:30" }
+  }
+}
+```
+
+> `workout_id` comes from `create_running_workout` (`result.workoutId`) or `get_workouts`. Scheduling the same workout on multiple dates creates a separate calendar entry for each.
 
 #### `get_workouts`
 

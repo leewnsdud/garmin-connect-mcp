@@ -78,7 +78,7 @@ uv run python scripts/auth.py
 | `GARMIN_TOKEN_DIR` | 토큰 저장 경로 | `~/.garminconnect` |
 | `GARMINTOKENS` | Base64 인코딩 토큰 (CI/Docker용) | - |
 
-## 제공 도구 (24개)
+## 제공 도구 (25개)
 
 ### Activities
 
@@ -136,6 +136,7 @@ uv run python scripts/auth.py
 | 도구 | 설명 | 주요 파라미터 |
 |------|------|--------------|
 | `create_running_workout` | 워크아웃 생성 및 Garmin에 업로드 (시간/거리 기반, 페이스/심박/케이던스/파워 타겟) | `name`, `steps`, `description` |
+| `schedule_workout` | 워크아웃을 훈련 캘린더의 특정 날짜에 배치 | `workout_id`, `date` |
 | `get_workouts` | 저장된 워크아웃 목록 | `count` (기본 20, 최대 100) |
 
 ### Gear

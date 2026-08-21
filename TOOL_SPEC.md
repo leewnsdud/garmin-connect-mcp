@@ -1,6 +1,6 @@
 # Garmin Running MCP - Tool Specification
 
-Full request/response specification for all 24 MCP tools.
+Full request/response specification for all 25 MCP tools.
 
 All date parameters use `YYYY-MM-DD` format and default to today when empty.
 All pace values are in `min:sec/km` format (e.g. `"5:38"`).
@@ -16,7 +16,7 @@ All distance values are in kilometers unless otherwise noted.
 - [Heart Rate](#heart-rate-3-tools)
 - [Wellness](#wellness-3-tools)
 - [Records & Goals](#records--goals-2-tools)
-- [Workout](#workout-2-tools)
+- [Workout](#workout-3-tools)
 - [Gear](#gear-1-tool)
 
 ---
@@ -597,7 +597,7 @@ No parameters.
 
 ---
 
-## Workout (2 tools)
+## Workout (3 tools)
 
 ### `create_running_workout`
 
@@ -646,6 +646,37 @@ No parameters.
 
 > For distance-based steps, estimated duration uses ~5:00/km.
 > If both `distance_meters` and `duration_seconds` are provided, distance takes priority.
+
+---
+
+### `schedule_workout`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `workout_id` | int | (required) | Workout ID from `create_running_workout` or `get_workouts` |
+| `date` | str | (required) | Target date `YYYY-MM-DD` |
+
+**Response:** `dict`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | str | `"scheduled"` |
+| `workout_id` | int | Scheduled workout ID |
+| `date` | str | Requested date `YYYY-MM-DD` |
+| `result` | dict | Garmin API response (`workoutScheduleId`, `calendarDate`, `workout`) |
+
+**`result` structure:**
+
+```json
+{
+  "workoutScheduleId": 1751343760,
+  "calendarDate": "2026-09-05",
+  "workout": { "workoutId": 1671357980, "workoutName": "4x1km @4:30" }
+}
+```
+
+> Places the workout on the Garmin training calendar so the watch surfaces it as the workout of the day.
+> Scheduling the same workout on multiple dates creates a separate calendar entry per date.
 
 ---
 
