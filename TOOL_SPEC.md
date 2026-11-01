@@ -1,6 +1,6 @@
 # Garmin Running MCP - Tool Specification
 
-Full request/response specification for all 24 MCP tools.
+Full request/response specification for all 26 MCP tools.
 
 All date parameters use `YYYY-MM-DD` format and default to today when empty.
 All pace values are in `min:sec/km` format (e.g. `"5:38"`).
@@ -14,7 +14,7 @@ All distance values are in kilometers unless otherwise noted.
 - [Summary](#summary-2-tools)
 - [Training](#training-5-tools)
 - [Heart Rate](#heart-rate-3-tools)
-- [Wellness](#wellness-3-tools)
+- [Wellness](#wellness-5-tools)
 - [Records & Goals](#records--goals-2-tools)
 - [Workout](#workout-2-tools)
 - [Gear](#gear-1-tool)
@@ -29,6 +29,8 @@ All distance values are in kilometers unless otherwise noted.
 |-----------|------|---------|-------------|
 | `count` | int | 20 | Number of activities (max 100) |
 
+Returns all activity types (running, strength, cycling, etc.). Running-specific fields are `null` for activities that don't record them.
+
 **Response:** `list[dict]` — each dict contains:
 
 | Field | Type | Description |
@@ -36,7 +38,7 @@ All distance values are in kilometers unless otherwise noted.
 | `activity_id` | int | Garmin activity ID |
 | `name` | str | Activity name |
 | `date` | str | `"YYYY-MM-DD HH:MM:SS"` |
-| `type` | str | `"running"`, `"trail_running"`, `"track_running"`, etc. |
+| `type` | str | `"running"`, `"trail_running"`, `"strength_training"`, etc. |
 | `distance_km` | float | Total distance |
 | `duration_seconds` | float | Total elapsed time |
 | `moving_duration_seconds` | float | Moving time |
@@ -80,6 +82,7 @@ All distance values are in kilometers unless otherwise noted.
 | `max_vertical_speed` | float\|null | Max vertical speed (m/s) — climbing rate |
 | `water_estimated_ml` | float\|null | Estimated water consumption (ml) |
 | `split_summary` | dict\|null | RWD breakdown (see below) |
+| `strength_training` | dict\|null | Strength exercise sets (strength activities only, see below) |
 
 **`split_summary` structure** (when available):
 
@@ -91,6 +94,25 @@ All distance values are in kilometers unless otherwise noted.
 }
 ```
 
+**`strength_training` structure** (strength activities only):
+
+```json
+{
+  "total_sets": 8,
+  "active_sets": 4,
+  "total_reps": 40,
+  "exercises": [
+    { "category": "SQUAT", "name": "BARBELL_BACK_SQUAT", "sets": 4, "reps": 40, "weight_kg": 60.0 }
+  ],
+  "exercise_sets": [
+    { "category": "SQUAT", "name": "BARBELL_BACK_SQUAT", "reps": 10, "weight_kg": 60.0, "set_type": "ACTIVE", "duration_seconds": 45.0 },
+    { "category": null, "name": null, "reps": null, "weight_kg": null, "set_type": "REST", "duration_seconds": 90.0 }
+  ]
+}
+```
+
+> `exercise_sets` lists every set including rests; `exercises` aggregates ACTIVE sets only. `weight_kg` is converted from Garmin's grams. Exercise sets are fetched for at most 10 strength activities per call (one extra API call each) to limit rate-limit exposure; `strength_training` is `null` if the fetch fails.
+
 ---
 
 ### `get_activities_by_date`
@@ -100,7 +122,7 @@ All distance values are in kilometers unless otherwise noted.
 | `start_date` | str | (required) | Start date `YYYY-MM-DD` |
 | `end_date` | str | (required) | End date `YYYY-MM-DD` |
 
-**Response:** `list[dict]` — same structure as `get_recent_activities`
+**Response:** `list[dict]` — same structure as `get_recent_activities` (all activity types, including `strength_training` for strength activities)
 
 ---
 
@@ -493,7 +515,7 @@ No parameters.
 
 ---
 
-## Wellness (3 tools)
+## Wellness (5 tools)
 
 ### `get_sleep_data`
 
@@ -555,6 +577,32 @@ No parameters.
 | `steps` | int\|null | Total steps |
 | `sleep_score` | int\|null | Sleep score |
 | `sleep_duration_seconds` | int\|null | Sleep duration |
+
+---
+
+### `get_body_composition`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `date` | str | today | End date `YYYY-MM-DD` |
+| `days` | int | 30 | Lookback window in days (1-90) |
+
+**Response:** `dict` — Garmin body composition response (`dateWeightList`, `totalAverage`). Values include weight, BMI, body fat %, body water %, bone mass and muscle mass when recorded.
+
+> Raw `weight`, `boneMass`, `muscleMass` are in **grams**. Each also gets a `_kg` sibling (e.g. `weight_kg: 72.5`).
+
+---
+
+### `get_weigh_ins`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `date` | str | today | End date `YYYY-MM-DD` |
+| `days` | int | 365 | Lookback window in days (1-365) |
+
+**Response:** `dict` — Garmin weigh-in response (`dailyWeightSummaries`, `totalAverage`).
+
+> Same gram → kg handling as `get_body_composition`: `weight`, `boneMass`, `muscleMass` get `_kg` siblings.
 
 ---
 

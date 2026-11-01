@@ -6,12 +6,12 @@ Claude Desktop 등 MCP 클라이언트와 연동하여 러닝 훈련 분석, 계
 
 ## 주요 기능
 
-- **러닝 활동 조회** - 최근 활동, 날짜별 조회, 상세 분석, 스플릿 데이터 (47개 필드: 페이스, 심박, 케이던스, 러닝 다이나믹스, 파워, HR존, GAP, 경사도, 스태미나, 온도 등)
+- **활동 조회** - 최근 활동, 날짜별 조회 (러닝 외 모든 활동 포함, 근력운동은 세트/반복/무게 상세 포함), 상세 분석, 스플릿 데이터 (47개 필드: 페이스, 심박, 케이던스, 러닝 다이나믹스, 파워, HR존, GAP, 경사도, 스태미나, 온도 등)
 - **트레일러닝 분석** - ClimbPro 경사 구간 분석, 등급별 난이도, Grade Adjusted Pace, Run/Walk Detection, 날씨 조건
 - **주간/월간 요약** - 볼륨 트렌드, 전월 대비 비교
 - **훈련 지표** - VO2max, 훈련 상태, 훈련 준비도, 레이스 예측, 젖산역치
 - **심박/HRV** - 일간 심박, 심박변이도, 활동별 심박존 분포
-- **웰니스** - 수면, 스트레스, 바디배터리, SpO2
+- **웰니스** - 수면, 스트레스, 바디배터리, SpO2, 체중/체성분
 - **개인 기록/목표** - PR, 피트니스 목표
 - **워크아웃 생성** - 시간/거리 기반 인터벌, 템포 등 구조화된 워크아웃을 Garmin 워치에 전송 (페이스/심박/케이던스/파워 타겟)
 - **러닝화 관리** - 신발별 누적 거리 + 마모율 추적
@@ -78,14 +78,14 @@ uv run python scripts/auth.py
 | `GARMIN_TOKEN_DIR` | 토큰 저장 경로 | `~/.garminconnect` |
 | `GARMINTOKENS` | Base64 인코딩 토큰 (CI/Docker용) | - |
 
-## 제공 도구 (24개)
+## 제공 도구 (26개)
 
 ### Activities
 
 | 도구 | 설명 | 주요 파라미터 |
 |------|------|--------------|
-| `get_recent_activities` | 최근 러닝 활동 목록 (GAP, RWD 포함) | `count` (기본 20, 최대 100) |
-| `get_activities_by_date` | 날짜 범위로 러닝 활동 조회 | `start_date`, `end_date` |
+| `get_recent_activities` | 최근 활동 목록 (전체 종류, GAP, RWD, 근력 세트 포함) | `count` (기본 20, 최대 100) |
+| `get_activities_by_date` | 날짜 범위로 활동 조회 (전체 종류) | `start_date`, `end_date` |
 | `get_activity_detail` | 활동 상세 정보 (스태미나, 임팩트 로드 포함) | `activity_id` |
 | `get_activity_splits` | km별 스플릿 데이터 | `activity_id` |
 | `get_activity_weather` | 활동 중 날씨 조건 (온도, 습도, 풍속) | `activity_id` |
@@ -123,6 +123,8 @@ uv run python scripts/auth.py
 | `get_sleep_data` | 수면 데이터 | `date` |
 | `get_daily_wellness` | 스트레스/바디배터리/SpO2/호흡수 | `date` |
 | `get_weekly_wellness_summary` | 주간 웰니스 트렌드 | `end_date`, `weeks` (최대 4) |
+| `get_body_composition` | 체중/BMI/체지방/골격근량 등 체성분 (kg 환산 포함) | `date`, `days` (기본 30, 최대 90) |
+| `get_weigh_ins` | 체중 측정 기록 (kg 환산 포함) | `date`, `days` (기본 365, 최대 365) |
 
 ### Records & Goals
 
@@ -165,8 +167,9 @@ uv run python scripts/auth.py
 |------|------|------|------|
 | `duration_seconds` | int | 시간 기반 | `"duration_seconds": 300` (5분) |
 | `distance_meters` | int | 거리 기반 | `"distance_meters": 1000` (1km) |
+| _(둘 다 없음)_ | - | 랩 버튼 (랩을 눌러 다음 step으로) | `{"type": "warmup"}` |
 
-하나의 워크아웃에서 시간/거리 기반 step을 혼합 사용할 수 있습니다.
+하나의 워크아웃에서 시간/거리/랩 버튼 step을 혼합 사용할 수 있습니다.
 
 ### Target 타입
 

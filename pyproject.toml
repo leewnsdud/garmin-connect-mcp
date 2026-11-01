@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Garmin Connect MCP server specialized for running data"
 requires-python = ">=3.10"
 dependencies = [
-    "garminconnect>=0.2.38",
+    "garminconnect>=0.3.2",
     "mcp[cli]>=1.0.0",
     "python-dotenv>=1.0.0",
 ]
