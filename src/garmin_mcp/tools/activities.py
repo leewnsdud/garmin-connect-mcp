@@ -67,7 +67,7 @@ def _build_split_summary(split_summaries: list[dict[str, Any]] | None) -> dict[s
 
 
 def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
-    """Extract key running fields from an activity."""
+    """Extract key fields from an activity."""
     distance_m = activity.get("distance", 0)
     duration_s = activity.get("duration", 0)
     avg_pace_s = (duration_s / (distance_m / 1000)) if distance_m > 0 else None
@@ -103,7 +103,7 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
         "training_effect_aerobic": activity.get("aerobicTrainingEffect"),
         "training_effect_anaerobic": activity.get("anaerobicTrainingEffect"),
         "training_load": activity.get("activityTrainingLoad"),
-        "training_effect_label": activity.get("trainingEffectLabel"),
+        "training_effect_label": activity.get("trainingEffectLabel") or activity.get("aerobicTrainingEffectMessage"),
         "vo2max": activity.get("vO2MaxValue"),
         "fastest_split_1km": _format_pace(activity.get("fastestSplit_1000")),
         "fastest_split_1mile": _format_pace(activity.get("fastestSplit_1609")),
@@ -131,8 +131,8 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
 def register(mcp: FastMCP):
     @mcp.tool()
     def get_recent_activities(count: int = 20) -> list[dict[str, Any]]:
-        """Get recent running activities. Returns a list of running activities
-        with key metrics like distance, pace, heart rate, cadence, and elevation.
+        """Get recent activities. Returns a list of activities with key metrics
+        like type, distance, duration, heart rate, calories, and training effect.
 
         Args:
             count: Number of activities to return (default: 20, max: 100)
@@ -141,18 +141,9 @@ def register(mcp: FastMCP):
 
         client = get_client()
         count = min(count, 100)
+        activities = client.get_activities(start=0, limit=count)
 
-        # Fetch more than needed to account for non-running activities
-        activities = client.get_activities(start=0, limit=count * 3)
-
-        running = []
-        for activity in activities:
-            if _is_running(activity):
-                running.append(_summarize_activity(activity))
-                if len(running) >= count:
-                    break
-
-        return running
+        return [_summarize_activity(activity) for activity in activities]
 
     @mcp.tool()
     def get_activities_by_date(
