@@ -9,6 +9,8 @@ from garmin_mcp.sanitize import strip_pii
 
 
 RUNNING_TYPE_KEYS = {"running", "track_running", "trail_running", "treadmill_running"}
+STRENGTH_TYPE_KEYS = {"strength_training", "strength"}
+STRENGTH_DETAIL_LIMIT = 10
 
 
 def _is_running(activity: dict[str, Any]) -> bool:
@@ -128,6 +130,63 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_strength(activity: dict[str, Any]) -> bool:
+    activity_type = activity.get("activityType") or activity.get("activityTypeDTO") or {}
+    type_key = activity_type.get("typeKey", "")
+    parent_type_key = activity_type.get("parentTypeKey", "")
+    return type_key in STRENGTH_TYPE_KEYS or parent_type_key in STRENGTH_TYPE_KEYS
+
+
+def _summarize_strength_sets(exercise_sets_result: dict[str, Any]) -> dict[str, Any] | None:
+    sets = exercise_sets_result.get("exerciseSets") if isinstance(exercise_sets_result, dict) else None
+    if not sets:
+        return None
+
+    active_sets = []
+    exercise_totals: dict[tuple[str | None, str | None], dict[str, Any]] = {}
+
+    for item in sets:
+        exercises = item.get("exercises") or []
+        first = exercises[0] if exercises else {}
+        set_type = item.get("setType")
+        row = {
+            "category": first.get("category"),
+            "name": first.get("name"),
+            "reps": item.get("repetitionCount"),
+            "weight": item.get("weight"),
+            "set_type": set_type,
+            "duration_seconds": item.get("duration"),
+        }
+        active_sets.append(row)
+
+        if set_type != "ACTIVE":
+            continue
+        key = (row["category"], row["name"])
+        total = exercise_totals.setdefault(
+            key,
+            {
+                "category": row["category"],
+                "name": row["name"],
+                "sets": 0,
+                "reps": 0,
+                "weight": row["weight"],
+            },
+        )
+        total["sets"] += 1
+        if row["reps"]:
+            total["reps"] += row["reps"]
+        if row["weight"]:
+            total["weight"] = row["weight"]
+
+    return {
+        "total_sets": len(sets),
+        "active_sets": sum(1 for item in sets if item.get("setType") == "ACTIVE"),
+        "total_reps": sum(item.get("repetitionCount") or 0 for item in sets if item.get("setType") == "ACTIVE"),
+        "exercises": list(exercise_totals.values()),
+        "exercise_sets": active_sets,
+    }
+
+
 def register(mcp: FastMCP):
     @mcp.tool()
     def get_recent_activities(count: int = 20) -> list[dict[str, Any]]:
@@ -143,7 +202,20 @@ def register(mcp: FastMCP):
         count = min(count, 100)
         activities = client.get_activities(start=0, limit=count)
 
-        return [_summarize_activity(activity) for activity in activities]
+        results = []
+        enriched_strength_count = 0
+        for activity in activities:
+            summary = _summarize_activity(activity)
+            if _is_strength(activity) and summary.get("activity_id") and enriched_strength_count < STRENGTH_DETAIL_LIMIT:
+                try:
+                    strength_sets = client.get_activity_exercise_sets(summary["activity_id"])
+                    summary["strength_training"] = _summarize_strength_sets(strength_sets)
+                    enriched_strength_count += 1
+                except Exception:
+                    summary["strength_training"] = None
+            results.append(summary)
+
+        return results
 
     @mcp.tool()
     def get_activities_by_date(

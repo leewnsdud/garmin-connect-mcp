@@ -70,6 +70,9 @@ class GarminClient:
     def get_activity(self, activity_id: int) -> dict[str, Any]:
         return self._call("get_activity", activity_id)
 
+    def get_activity_exercise_sets(self, activity_id: int) -> dict[str, Any]:
+        return self._call("get_activity_exercise_sets", activity_id)
+
     def get_activity_splits(self, activity_id: int) -> dict[str, Any]:
         return self._call("get_activity_splits", activity_id)
 
