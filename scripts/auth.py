@@ -33,19 +33,14 @@ def main():
             password=password,
             prompt_mfa=lambda: input("\nMFA code: ").strip(),
         )
-        garmin.login()
+        garmin.login(tokenstore=token_dir)
     except Exception as e:
         print(f"\nAuthentication failed: {e}")
         sys.exit(1)
 
-    # Save tokens to disk
-    try:
-        garmin.garth.dump(token_dir)
-        print(f"\nAuthentication successful!")
-        print(f"Tokens saved to: {token_dir}")
-        print(f"\nYou can now start the MCP server.")
-    except Exception as e:
-        print(f"\nAuthentication succeeded but failed to save tokens: {e}")
+    print(f"\nAuthentication successful!")
+    print(f"Tokens saved to: {token_dir}")
+    print(f"\nYou can now start the MCP server.")
 
     # Show basic profile info to confirm
     try:
