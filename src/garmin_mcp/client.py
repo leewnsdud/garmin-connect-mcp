@@ -162,6 +162,17 @@ class GarminClient:
         validate_date(date_str)
         return self._call("get_stats", date_str)
 
+    def get_body_composition(self, start_date: str, end_date: str | None = None) -> dict[str, Any]:
+        validate_date(start_date)
+        if end_date:
+            validate_date(end_date)
+        return self._call("get_body_composition", start_date, end_date)
+
+    def get_weigh_ins(self, start_date: str, end_date: str) -> dict[str, Any]:
+        validate_date(start_date)
+        validate_date(end_date)
+        return self._call("get_weigh_ins", start_date, end_date)
+
     # --- Records & Goals ---
 
     def get_personal_record(self) -> list[dict[str, Any]]:

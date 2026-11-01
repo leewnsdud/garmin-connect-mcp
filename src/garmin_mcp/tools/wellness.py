@@ -1,6 +1,6 @@
 """Wellness and recovery tools (sleep, stress, body battery, etc.)."""
 
-from datetime import date, timedelta
+from datetime import date as date_module, timedelta
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -63,6 +63,41 @@ def register(mcp: FastMCP):
         return strip_pii(result)
 
     @mcp.tool()
+    def get_body_composition(date: str = "", days: int = 30) -> dict[str, Any]:
+        """Get recent body composition data including weight, BMI, body fat,
+        body water, bone mass, and muscle mass when available.
+
+        Args:
+            date: End date (YYYY-MM-DD), defaults to today
+            days: Lookback window in days (default 30, max 90)
+        """
+        from garmin_mcp import get_client
+
+        client = get_client()
+        end = date or today_str()
+        days = min(max(days, 1), 90)
+        start = (date_module.fromisoformat(end) - timedelta(days=days)).isoformat()
+        return strip_pii(client.get_body_composition(start, end))
+
+    @mcp.tool()
+    def get_weigh_ins(date: str = "", days: int = 365) -> dict[str, Any]:
+        """Get recent Garmin weigh-in records. Weight values are returned in
+        Garmin's original units, commonly grams, and should be normalized by
+        callers before display.
+
+        Args:
+            date: End date (YYYY-MM-DD), defaults to today
+            days: Lookback window in days (default 365, max 365)
+        """
+        from garmin_mcp import get_client
+
+        client = get_client()
+        end = date or today_str()
+        days = min(max(days, 1), 365)
+        start = (date_module.fromisoformat(end) - timedelta(days=days)).isoformat()
+        return strip_pii(client.get_weigh_ins(start, end))
+
+    @mcp.tool()
     def get_weekly_wellness_summary(
         end_date: str = "",
         weeks: int = 1,
@@ -77,7 +112,7 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        end = date.fromisoformat(end_date) if end_date else date.today()
+        end = date_module.fromisoformat(end_date) if end_date else date_module.today()
         weeks = min(weeks, 4)
 
         results = []
