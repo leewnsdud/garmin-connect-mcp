@@ -19,17 +19,30 @@ Claude Desktop 등 MCP 클라이언트와 연동하여 러닝 훈련 분석, 계
 
 ## 요구 사항
 
-- Python 3.10+
+- Python 3.12+ (garminconnect 0.3 요구 사항)
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
 - Garmin Connect 계정
 
 ## 설치
 
 ```bash
-git clone https://github.com/leewnsdud/garmin-connect-mcp.git
+git clone https://github.com/gt3mplar/garmin-connect-mcp.git
 cd garmin-connect-mcp
 uv sync
 ```
+
+Windows에서 uv 없이 설치(PowerShell):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e .
+.\.venv\Scripts\python scripts\auth.py
+```
+
+MCP 실행 파일은 `.venv\Scripts\garmin-mcp.exe`입니다.
+
+> 이 포크는 원본(`leewnsdud/garmin-connect-mcp`)에서 다음을 고쳤습니다: `garminconnect` 0.3(garth 제거)에 맞춘
+> 로그인·토큰 저장·프로필 ID, `mcp<2` 고정(2.x에서 `FastMCP` 이름 변경), 체중 도구 `get_weigh_ins`, `get_body_composition` 추가.
 
 ## 인증
 
@@ -78,7 +91,7 @@ uv run python scripts/auth.py
 | `GARMIN_TOKEN_DIR` | 토큰 저장 경로 | `~/.garminconnect` |
 | `GARMINTOKENS` | Base64 인코딩 토큰 (CI/Docker용) | - |
 
-## 제공 도구 (24개)
+## 제공 도구 (26개)
 
 ### Activities
 
@@ -143,6 +156,13 @@ uv run python scripts/auth.py
 | 도구 | 설명 | 주요 파라미터 |
 |------|------|--------------|
 | `get_running_gear` | 러닝화 목록 + 누적 거리 + 마모율 | 없음 |
+
+### Body
+
+| 도구 | 설명 | 주요 파라미터 |
+|------|------|--------------|
+| `get_weigh_ins` | 체중 기록 (최신 `weightKg` + 날짜별 목록, kg) | `date`, `days` (기본 30, 최대 366) |
+| `get_body_composition` | 체성분 (체중, BMI, 체지방, 근육량) | `date`, `days` (기본 30, 최대 366) |
 
 ## 워크아웃 생성 가이드
 

@@ -10,6 +10,9 @@ from pathlib import Path
 
 from garminconnect import Garmin
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from garmin_mcp.auth import get_token_dir  # noqa: E402
+
 
 def main():
     print("=== Garmin Connect Authentication ===\n")
@@ -21,9 +24,8 @@ def main():
         print("Error: Email and password are required.")
         sys.exit(1)
 
-    token_dir = Path.home() / ".garminconnect"
-    token_dir.mkdir(mode=0o700, exist_ok=True)
-    token_dir = str(token_dir)
+    # Same location the MCP server reads (GARMIN_TOKEN_DIR, default ~/.garminconnect).
+    token_dir = get_token_dir()
 
     print("\nAuthenticating...")
 
@@ -33,19 +35,15 @@ def main():
             password=password,
             prompt_mfa=lambda: input("\nMFA code: ").strip(),
         )
-        garmin.login()
+        # With a tokenstore path, login() also saves the tokens there.
+        garmin.login(token_dir)
     except Exception as e:
         print(f"\nAuthentication failed: {e}")
         sys.exit(1)
 
-    # Save tokens to disk
-    try:
-        garmin.garth.dump(token_dir)
-        print(f"\nAuthentication successful!")
-        print(f"Tokens saved to: {token_dir}")
-        print(f"\nYou can now start the MCP server.")
-    except Exception as e:
-        print(f"\nAuthentication succeeded but failed to save tokens: {e}")
+    print(f"\nAuthentication successful!")
+    print(f"Tokens saved to: {token_dir}")
+    print(f"\nYou can now start the MCP server.")
 
     # Show basic profile info to confirm
     try:

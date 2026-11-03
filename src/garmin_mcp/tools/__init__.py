@@ -14,6 +14,7 @@ def register_tools(mcp: FastMCP):
         records,
         workout,
         gear,
+        body,
     )
 
     activities.register(mcp)
@@ -24,3 +25,4 @@ def register_tools(mcp: FastMCP):
     records.register(mcp)
     workout.register(mcp)
     gear.register(mcp)
+    body.register(mcp)
