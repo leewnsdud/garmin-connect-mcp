@@ -27,7 +27,8 @@ def register(mcp: FastMCP):
     @mcp.tool()
     def get_daily_wellness(date: str = "") -> dict[str, Any]:
         """Get comprehensive daily wellness data: stress level, Body Battery,
-        SpO2 (blood oxygen), and respiration rate. Helps assess recovery
+        SpO2 (blood oxygen), respiration rate, and daily activity (steps,
+        active calories, intensity minutes). Helps assess recovery
         and readiness for training.
 
         Args:
@@ -59,6 +60,19 @@ def register(mcp: FastMCP):
             result["respiration"] = client.get_respiration_data(d)
         except Exception:
             result["respiration"] = None
+
+        try:
+            stats = client.get_stats(d) or {}
+            result["activity"] = {
+                "totalSteps": stats.get("totalSteps"),
+                "dailyStepGoal": stats.get("dailyStepGoal"),
+                "activeKilocalories": stats.get("activeKilocalories"),
+                "moderateIntensityMinutes": stats.get("moderateIntensityMinutes"),
+                "vigorousIntensityMinutes": stats.get("vigorousIntensityMinutes"),
+                "totalDistanceMeters": stats.get("totalDistanceMeters"),
+            }
+        except Exception:
+            result["activity"] = None
 
         return strip_pii(result)
 
