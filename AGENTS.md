@@ -21,10 +21,11 @@ src/garmin_mcp/
     summary.py         # Weekly/monthly summary (2 tools)
     training.py        # Training metrics (5 tools)
     heart_rate.py      # Heart rate/HRV (3 tools)
-    wellness.py        # Sleep/stress/body battery/body composition (5 tools)
+    wellness.py        # Sleep/stress/body battery/daily activity (3 tools)
     records.py         # PR/goals (2 tools)
     workout.py         # Workout creation/listing (2 tools)
     gear.py            # Running shoe management (1 tool)
+    body.py            # Weigh-ins/body composition (2 tools)
 scripts/
   auth.py              # Pre-auth CLI (run once for initial setup)
 ```
@@ -623,7 +624,7 @@ Show HR zone distribution for activity 21892408004
 
 ---
 
-### Wellness (5 tools)
+### Wellness (3 tools)
 
 #### `get_sleep_data`
 
@@ -641,7 +642,7 @@ How did I sleep last night?
 
 #### `get_daily_wellness`
 
-Returns comprehensive daily wellness: stress, Body Battery, SpO2, and respiration in a single call.
+Returns comprehensive daily wellness: stress, Body Battery, SpO2, respiration, and daily activity (steps, active calories, intensity minutes) in a single call.
 
 **Parameters:** `date: str = ""`
 **Returns:** `dict`
@@ -672,6 +673,14 @@ Show my wellness data for today
     "lowestRespirationValue": 13,
     "highestRespirationValue": 20,
     "avgWakingRespirationValue": 17
+  },
+  "activity": {
+    "totalSteps": 9832,
+    "dailyStepGoal": 8000,
+    "activeKilocalories": 612,
+    "moderateIntensityMinutes": 20,
+    "vigorousIntensityMinutes": 35,
+    "totalDistanceMeters": 7650
   }
 }
 ```
@@ -689,34 +698,6 @@ Returns weekly wellness trends: daily stress, Body Battery, sleep scores, and re
 ```
 Show my wellness trends for the past 2 weeks
 ```
-
-#### `get_body_composition`
-
-Returns body composition data: weight, BMI, body fat, body water, bone mass, and muscle mass when recorded.
-
-**Parameters:** `date: str = ""` (end date), `days: int = 30` (1-90)
-**Returns:** `dict` (`dateWeightList`, `totalAverage`)
-
-**Example request:**
-```
-Show my body composition for the last 30 days
-```
-
-> Raw `weight`, `boneMass`, `muscleMass` are in **grams**; each gets a `_kg` sibling (e.g. `weight_kg: 72.5`). Use the `_kg` fields for display.
-
-#### `get_weigh_ins`
-
-Returns Garmin weigh-in records.
-
-**Parameters:** `date: str = ""` (end date), `days: int = 365` (1-365)
-**Returns:** `dict` (`dailyWeightSummaries`, `totalAverage`)
-
-**Example request:**
-```
-How has my weight changed this year?
-```
-
-> Same gram → kg handling as `get_body_composition`.
 
 ---
 
@@ -778,6 +759,48 @@ Returns fitness goals and progress.
 **Example request:**
 ```
 Show my active fitness goals
+```
+
+---
+
+### Body (2 tools)
+
+#### `get_weigh_ins`
+
+Returns body weight weigh-ins (scale or manual entries) for the `days` days ending on `date`.
+
+**Parameters:** `date: str = ""` (end date), `days: int = 30` (max 366)
+**Returns:** `dict`
+
+**Example request:**
+```
+How has my weight changed this month?
+```
+
+**Example response:**
+```json
+{
+  "weightKg": 72.4,
+  "date": "2026-11-03",
+  "weighIns": [
+    { "date": "2026-11-03", "weightKg": 72.4, "bmi": 23.1, "bodyFatPercent": 15.2, "source": "INDEX_SCALE" },
+    { "date": "2026-11-01", "weightKg": 72.8, "bmi": 23.2, "bodyFatPercent": null, "source": "MANUAL" }
+  ]
+}
+```
+
+> Top-level `weightKg`/`date` is the latest weigh-in. `weighIns` is newest first. Garmin's gram values are converted to kg.
+
+#### `get_body_composition`
+
+Returns body composition (weight, BMI, body fat, muscle mass) for the `days` days ending on `date`.
+
+**Parameters:** `date: str = ""` (end date), `days: int = 30` (max 366)
+**Returns:** `dict` — same shape as `get_weigh_ins`; each `weighIns` entry has `date`, `weightKg`, `bmi`, `bodyFatPercent`, `muscleMassKg`.
+
+**Example request:**
+```
+Show my body composition for the last 30 days
 ```
 
 ---

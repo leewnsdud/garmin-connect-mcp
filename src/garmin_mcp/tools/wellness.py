@@ -9,24 +9,6 @@ from garmin_mcp.client import today_str
 from garmin_mcp.sanitize import strip_pii
 
 
-# Garmin weight API fields reported in grams
-GRAM_WEIGHT_KEYS = frozenset({"weight", "boneMass", "muscleMass"})
-
-
-def _add_kg_fields(data: Any) -> Any:
-    """Recursively add `<key>_kg` siblings for gram-based weight fields."""
-    if isinstance(data, dict):
-        result = {k: _add_kg_fields(v) for k, v in data.items()}
-        for key in GRAM_WEIGHT_KEYS:
-            value = data.get(key)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                result[f"{key}_kg"] = round(value / 1000, 2)
-        return result
-    if isinstance(data, list):
-        return [_add_kg_fields(item) for item in data]
-    return data
-
-
 def register(mcp: FastMCP):
     @mcp.tool()
     def get_sleep_data(date: str = "") -> dict[str, Any]:
@@ -45,7 +27,8 @@ def register(mcp: FastMCP):
     @mcp.tool()
     def get_daily_wellness(date: str = "") -> dict[str, Any]:
         """Get comprehensive daily wellness data: stress level, Body Battery,
-        SpO2 (blood oxygen), and respiration rate. Helps assess recovery
+        SpO2 (blood oxygen), respiration rate, and daily activity (steps,
+        active calories, intensity minutes). Helps assess recovery
         and readiness for training.
 
         Args:
@@ -78,43 +61,20 @@ def register(mcp: FastMCP):
         except Exception:
             result["respiration"] = None
 
+        try:
+            stats = client.get_stats(d) or {}
+            result["activity"] = {
+                "totalSteps": stats.get("totalSteps"),
+                "dailyStepGoal": stats.get("dailyStepGoal"),
+                "activeKilocalories": stats.get("activeKilocalories"),
+                "moderateIntensityMinutes": stats.get("moderateIntensityMinutes"),
+                "vigorousIntensityMinutes": stats.get("vigorousIntensityMinutes"),
+                "totalDistanceMeters": stats.get("totalDistanceMeters"),
+            }
+        except Exception:
+            result["activity"] = None
+
         return strip_pii(result)
-
-    @mcp.tool()
-    def get_body_composition(date: str = "", days: int = 30) -> dict[str, Any]:
-        """Get recent body composition data including weight, BMI, body fat,
-        body water, bone mass, and muscle mass when available. Gram-based
-        fields (weight, boneMass, muscleMass) also get a `_kg` sibling.
-
-        Args:
-            date: End date (YYYY-MM-DD), defaults to today
-            days: Lookback window in days (default 30, max 90)
-        """
-        from garmin_mcp import get_client
-
-        client = get_client()
-        end = date or today_str()
-        days = min(max(days, 1), 90)
-        start = (date_module.fromisoformat(end) - timedelta(days=days)).isoformat()
-        return _add_kg_fields(strip_pii(client.get_body_composition(start, end)))
-
-    @mcp.tool()
-    def get_weigh_ins(date: str = "", days: int = 365) -> dict[str, Any]:
-        """Get recent Garmin weigh-in records. Raw weight values are in grams;
-        each gram-based field (weight, boneMass, muscleMass) also gets a
-        `_kg` sibling for display.
-
-        Args:
-            date: End date (YYYY-MM-DD), defaults to today
-            days: Lookback window in days (default 365, max 365)
-        """
-        from garmin_mcp import get_client
-
-        client = get_client()
-        end = date or today_str()
-        days = min(max(days, 1), 365)
-        start = (date_module.fromisoformat(end) - timedelta(days=days)).isoformat()
-        return _add_kg_fields(strip_pii(client.get_weigh_ins(start, end)))
 
     @mcp.tool()
     def get_weekly_wellness_summary(

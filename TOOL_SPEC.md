@@ -14,8 +14,9 @@ All distance values are in kilometers unless otherwise noted.
 - [Summary](#summary-2-tools)
 - [Training](#training-5-tools)
 - [Heart Rate](#heart-rate-3-tools)
-- [Wellness](#wellness-5-tools)
+- [Wellness](#wellness-3-tools)
 - [Records & Goals](#records--goals-2-tools)
+- [Body](#body-2-tools)
 - [Workout](#workout-2-tools)
 - [Gear](#gear-1-tool)
 
@@ -515,7 +516,7 @@ No parameters.
 
 ---
 
-## Wellness (5 tools)
+## Wellness (3 tools)
 
 ### `get_sleep_data`
 
@@ -544,6 +545,7 @@ No parameters.
 | `body_battery` | list[dict]\|null | Body Battery (list with `charged`, `drained` fields) |
 | `spo2` | dict\|null | Blood oxygen (`lastSevenDaysAvgSpO2`) |
 | `respiration` | dict\|null | Respiration rate (`lowestRespirationValue`, `highestRespirationValue`, `avgWakingRespirationValue`) |
+| `activity` | dict\|null | Daily activity: `totalSteps`, `dailyStepGoal`, `activeKilocalories`, `moderateIntensityMinutes`, `vigorousIntensityMinutes`, `totalDistanceMeters` |
 
 ---
 
@@ -577,32 +579,6 @@ No parameters.
 | `steps` | int\|null | Total steps |
 | `sleep_score` | int\|null | Sleep score |
 | `sleep_duration_seconds` | int\|null | Sleep duration |
-
----
-
-### `get_body_composition`
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `date` | str | today | End date `YYYY-MM-DD` |
-| `days` | int | 30 | Lookback window in days (1-90) |
-
-**Response:** `dict` — Garmin body composition response (`dateWeightList`, `totalAverage`). Values include weight, BMI, body fat %, body water %, bone mass and muscle mass when recorded.
-
-> Raw `weight`, `boneMass`, `muscleMass` are in **grams**. Each also gets a `_kg` sibling (e.g. `weight_kg: 72.5`).
-
----
-
-### `get_weigh_ins`
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `date` | str | today | End date `YYYY-MM-DD` |
-| `days` | int | 365 | Lookback window in days (1-365) |
-
-**Response:** `dict` — Garmin weigh-in response (`dailyWeightSummaries`, `totalAverage`).
-
-> Same gram → kg handling as `get_body_composition`: `weight`, `boneMass`, `muscleMass` get `_kg` siblings.
 
 ---
 
@@ -642,6 +618,46 @@ No parameters.
 | `status` | str | `"active"` | `"active"`, `"completed"`, `"all"` |
 
 **Response:** `list[dict]` — Fitness goals with progress data.
+
+---
+
+## Body (2 tools)
+
+### `get_weigh_ins`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `date` | str | today | End date `YYYY-MM-DD` |
+| `days` | int | 30 | Lookback window in days (1-366) |
+
+**Response:** `dict`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `weightKg` | float\|null | Latest weight (kg) |
+| `date` | str\|null | Date of latest weigh-in |
+| `weighIns` | list[dict] | Daily weigh-ins, newest first |
+
+**`weighIns` entry:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | str | ISO date |
+| `weightKg` | float\|null | Weight (kg, converted from grams) |
+| `bmi` | float\|null | BMI |
+| `bodyFatPercent` | float\|null | Body fat (%) |
+| `source` | str\|null | e.g. `"INDEX_SCALE"`, `"MANUAL"` |
+
+---
+
+### `get_body_composition`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `date` | str | today | End date `YYYY-MM-DD` |
+| `days` | int | 30 | Lookback window in days (1-366) |
+
+**Response:** `dict` — same top-level shape as `get_weigh_ins`. Each `weighIns` entry has `date`, `weightKg`, `bmi`, `bodyFatPercent`, `muscleMassKg`.
 
 ---
 

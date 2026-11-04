@@ -165,16 +165,17 @@ class GarminClient:
         validate_date(date_str)
         return self._call("get_stats", date_str)
 
-    def get_body_composition(self, start_date: str, end_date: str | None = None) -> dict[str, Any]:
-        validate_date(start_date)
-        if end_date:
-            validate_date(end_date)
-        return self._call("get_body_composition", start_date, end_date)
+    # --- Body composition ---
 
     def get_weigh_ins(self, start_date: str, end_date: str) -> dict[str, Any]:
         validate_date(start_date)
         validate_date(end_date)
         return self._call("get_weigh_ins", start_date, end_date)
+
+    def get_body_composition(self, start_date: str, end_date: str) -> dict[str, Any]:
+        validate_date(start_date)
+        validate_date(end_date)
+        return self._call("get_body_composition", start_date, end_date)
 
     # --- Records & Goals ---
 
@@ -187,9 +188,11 @@ class GarminClient:
     # --- Gear ---
 
     def get_profile_id(self) -> int:
-        """Get the user's profile ID from Garmin profile settings."""
-        profile = self._garmin.get_user_profile()
-        return profile["userData"]["profileId"]
+        """Get the user's profile ID (loaded at login from the social profile)."""
+        profile_id = self._garmin.profile_id
+        if profile_id is None:
+            raise RuntimeError("Garmin profile ID is not available for this account.")
+        return profile_id
 
     def get_gear(self, user_profile_number: int) -> list[dict[str, Any]]:
         return self._call("get_gear", user_profile_number)
