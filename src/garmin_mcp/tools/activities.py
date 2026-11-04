@@ -131,9 +131,14 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
 
 
 def _grams_to_kg(grams: float | None) -> float | None:
-    """Convert Garmin's gram-based weight values to kilograms."""
+    """Convert Garmin's gram-based weight values to kilograms.
+
+    Garmin stores bodyweight sets as -1; they are returned as 0 kg.
+    """
     if grams is None:
         return None
+    if grams < 0:
+        return 0.0
     return round(grams / 1000, 2)
 
 
