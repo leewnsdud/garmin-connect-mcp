@@ -1,6 +1,6 @@
 """Wellness and recovery tools (sleep, stress, body battery, etc.)."""
 
-from datetime import date, timedelta
+from datetime import date as date_module, timedelta
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -27,7 +27,8 @@ def register(mcp: FastMCP):
     @mcp.tool()
     def get_daily_wellness(date: str = "") -> dict[str, Any]:
         """Get comprehensive daily wellness data: stress level, Body Battery,
-        SpO2 (blood oxygen), and respiration rate. Helps assess recovery
+        SpO2 (blood oxygen), respiration rate, and daily activity (steps,
+        active calories, intensity minutes). Helps assess recovery
         and readiness for training.
 
         Args:
@@ -60,6 +61,19 @@ def register(mcp: FastMCP):
         except Exception:
             result["respiration"] = None
 
+        try:
+            stats = client.get_stats(d) or {}
+            result["activity"] = {
+                "totalSteps": stats.get("totalSteps"),
+                "dailyStepGoal": stats.get("dailyStepGoal"),
+                "activeKilocalories": stats.get("activeKilocalories"),
+                "moderateIntensityMinutes": stats.get("moderateIntensityMinutes"),
+                "vigorousIntensityMinutes": stats.get("vigorousIntensityMinutes"),
+                "totalDistanceMeters": stats.get("totalDistanceMeters"),
+            }
+        except Exception:
+            result["activity"] = None
+
         return strip_pii(result)
 
     @mcp.tool()
@@ -77,7 +91,7 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        end = date.fromisoformat(end_date) if end_date else date.today()
+        end = date_module.fromisoformat(end_date) if end_date else date_module.today()
         weeks = min(weeks, 4)
 
         results = []

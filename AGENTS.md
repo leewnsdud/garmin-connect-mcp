@@ -17,14 +17,15 @@ src/garmin_mcp/
   sanitize.py          # PII filtering (strips owner info, GPS coordinates)
   tools/
     __init__.py        # Tool module registration
-    activities.py      # Activity query/detail/weather/climbs (6 tools)
+    activities.py      # Activity query/detail/weather/climbs/strength sets (6 tools)
     summary.py         # Weekly/monthly summary (2 tools)
     training.py        # Training metrics (5 tools)
     heart_rate.py      # Heart rate/HRV (3 tools)
-    wellness.py        # Sleep/stress/body battery (3 tools)
+    wellness.py        # Sleep/stress/body battery/daily activity (3 tools)
     records.py         # PR/goals (2 tools)
     workout.py         # Workout creation/listing (2 tools)
     gear.py            # Running shoe management (1 tool)
+    body.py            # Weigh-ins/body composition (2 tools)
 scripts/
   auth.py              # Pre-auth CLI (run once for initial setup)
 ```
@@ -51,7 +52,7 @@ MCP clients (e.g. Claude Desktop) must restart the server process to pick up new
 
 ## MCP tools reference
 
-24 tools total. All date parameters use `YYYY-MM-DD` format, defaulting to today.
+26 tools total. All date parameters use `YYYY-MM-DD` format, defaulting to today.
 
 ---
 
@@ -59,7 +60,7 @@ MCP clients (e.g. Claude Desktop) must restart the server process to pick up new
 
 #### `get_recent_activities`
 
-Returns recent running activities with key metrics. Non-running activities are filtered out.
+Returns recent activities of all types (running, strength, cycling, etc.) with key metrics. Running-specific fields are `null` when not recorded. Strength activities get a `strength_training` field with exercise sets (see below).
 
 **Parameters:** `count: int = 20` (max 100)
 **Returns:** `list[dict]`
@@ -126,11 +127,13 @@ Get my last 2 running activities
 ]
 ```
 
+> **Strength training fields:** For strength activities, `strength_training` contains `total_sets`, `active_sets`, `total_reps`, `exercises` (per-exercise aggregate of ACTIVE sets: `category`, `name`, `sets`, `reps`, `weight_kg`) and `exercise_sets` (every set including rests). `weight_kg` is converted from Garmin's grams. Sets are fetched for at most 10 strength activities per call (one extra API call each); the field is `null` if the fetch fails.
+
 > **Trail running fields:** `avg_grade_adjusted_pace` is the Grade Adjusted Pace (GAP) - what your effort would equate to on flat terrain. `split_summary` contains Garmin's Run/Walk Detection (RWD) breakdown with `run`, `walk`, and `stand` segments. These are especially useful for trail running analysis. Fields are `null` when not applicable.
 
 #### `get_activities_by_date`
 
-Returns running activities within a date range.
+Returns activities of all types within a date range, with the same structure as `get_recent_activities` (including `strength_training`).
 
 **Parameters:** `start_date: str`, `end_date: str`
 **Returns:** `list[dict]` (same structure as `get_recent_activities`)
@@ -639,7 +642,7 @@ How did I sleep last night?
 
 #### `get_daily_wellness`
 
-Returns comprehensive daily wellness: stress, Body Battery, SpO2, and respiration in a single call.
+Returns comprehensive daily wellness: stress, Body Battery, SpO2, respiration, and daily activity (steps, active calories, intensity minutes) in a single call.
 
 **Parameters:** `date: str = ""`
 **Returns:** `dict`
@@ -670,6 +673,14 @@ Show my wellness data for today
     "lowestRespirationValue": 13,
     "highestRespirationValue": 20,
     "avgWakingRespirationValue": 17
+  },
+  "activity": {
+    "totalSteps": 9832,
+    "dailyStepGoal": 8000,
+    "activeKilocalories": 612,
+    "moderateIntensityMinutes": 20,
+    "vigorousIntensityMinutes": 35,
+    "totalDistanceMeters": 7650
   }
 }
 ```
@@ -748,6 +759,48 @@ Returns fitness goals and progress.
 **Example request:**
 ```
 Show my active fitness goals
+```
+
+---
+
+### Body (2 tools)
+
+#### `get_weigh_ins`
+
+Returns body weight weigh-ins (scale or manual entries) for the `days` days ending on `date`.
+
+**Parameters:** `date: str = ""` (end date), `days: int = 30` (max 366)
+**Returns:** `dict`
+
+**Example request:**
+```
+How has my weight changed this month?
+```
+
+**Example response:**
+```json
+{
+  "weightKg": 72.4,
+  "date": "2026-11-03",
+  "weighIns": [
+    { "date": "2026-11-03", "weightKg": 72.4, "bmi": 23.1, "bodyFatPercent": 15.2, "source": "INDEX_SCALE" },
+    { "date": "2026-11-01", "weightKg": 72.8, "bmi": 23.2, "bodyFatPercent": null, "source": "MANUAL" }
+  ]
+}
+```
+
+> Top-level `weightKg`/`date` is the latest weigh-in. `weighIns` is newest first. Garmin's gram values are converted to kg.
+
+#### `get_body_composition`
+
+Returns body composition (weight, BMI, body fat, muscle mass) for the `days` days ending on `date`.
+
+**Parameters:** `date: str = ""` (end date), `days: int = 30` (max 366)
+**Returns:** `dict` — same shape as `get_weigh_ins`; each `weighIns` entry has `date`, `weightKg`, `bmi`, `bodyFatPercent`, `muscleMassKg`.
+
+**Example request:**
+```
+Show my body composition for the last 30 days
 ```
 
 ---

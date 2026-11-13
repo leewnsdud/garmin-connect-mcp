@@ -1,4 +1,4 @@
-"""Running activity tools."""
+"""Activity tools (running-focused, with strength set details)."""
 
 from typing import Any
 
@@ -9,6 +9,8 @@ from garmin_mcp.sanitize import strip_pii
 
 
 RUNNING_TYPE_KEYS = {"running", "track_running", "trail_running", "treadmill_running"}
+STRENGTH_TYPE_KEYS = {"strength_training", "strength"}
+STRENGTH_DETAIL_LIMIT = 10
 
 
 def _is_running(activity: dict[str, Any]) -> bool:
@@ -67,7 +69,7 @@ def _build_split_summary(split_summaries: list[dict[str, Any]] | None) -> dict[s
 
 
 def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
-    """Extract key running fields from an activity."""
+    """Extract key fields from an activity."""
     distance_m = activity.get("distance", 0)
     duration_s = activity.get("duration", 0)
     avg_pace_s = (duration_s / (distance_m / 1000)) if distance_m > 0 else None
@@ -103,7 +105,7 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
         "training_effect_aerobic": activity.get("aerobicTrainingEffect"),
         "training_effect_anaerobic": activity.get("anaerobicTrainingEffect"),
         "training_load": activity.get("activityTrainingLoad"),
-        "training_effect_label": activity.get("trainingEffectLabel"),
+        "training_effect_label": activity.get("trainingEffectLabel") or activity.get("aerobicTrainingEffectMessage"),
         "vo2max": activity.get("vO2MaxValue"),
         "fastest_split_1km": _format_pace(activity.get("fastestSplit_1000")),
         "fastest_split_1mile": _format_pace(activity.get("fastestSplit_1609")),
@@ -128,11 +130,101 @@ def _summarize_activity(activity: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _grams_to_kg(grams: float | None) -> float | None:
+    """Convert Garmin's gram-based weight values to kilograms.
+
+    Garmin stores bodyweight sets as -1; they are returned as 0 kg.
+    """
+    if grams is None:
+        return None
+    if grams < 0:
+        return 0.0
+    return round(grams / 1000, 2)
+
+
+def _is_strength(activity: dict[str, Any]) -> bool:
+    activity_type = activity.get("activityType") or activity.get("activityTypeDTO") or {}
+    type_key = activity_type.get("typeKey", "")
+    parent_type_key = activity_type.get("parentTypeKey", "")
+    return type_key in STRENGTH_TYPE_KEYS or parent_type_key in STRENGTH_TYPE_KEYS
+
+
+def _summarize_strength_sets(exercise_sets_result: dict[str, Any]) -> dict[str, Any] | None:
+    sets = exercise_sets_result.get("exerciseSets") if isinstance(exercise_sets_result, dict) else None
+    if not sets:
+        return None
+
+    all_sets = []
+    exercise_totals: dict[tuple[str | None, str | None], dict[str, Any]] = {}
+
+    for item in sets:
+        exercises = item.get("exercises") or []
+        first = exercises[0] if exercises else {}
+        set_type = item.get("setType")
+        row = {
+            "category": first.get("category"),
+            "name": first.get("name"),
+            "reps": item.get("repetitionCount"),
+            "weight_kg": _grams_to_kg(item.get("weight")),
+            "set_type": set_type,
+            "duration_seconds": item.get("duration"),
+        }
+        all_sets.append(row)
+
+        if set_type != "ACTIVE":
+            continue
+        key = (row["category"], row["name"])
+        total = exercise_totals.setdefault(
+            key,
+            {
+                "category": row["category"],
+                "name": row["name"],
+                "sets": 0,
+                "reps": 0,
+                "weight_kg": row["weight_kg"],
+            },
+        )
+        total["sets"] += 1
+        if row["reps"]:
+            total["reps"] += row["reps"]
+        if row["weight_kg"]:
+            total["weight_kg"] = row["weight_kg"]
+
+    return {
+        "total_sets": len(sets),
+        "active_sets": sum(1 for item in sets if item.get("setType") == "ACTIVE"),
+        "total_reps": sum(item.get("repetitionCount") or 0 for item in sets if item.get("setType") == "ACTIVE"),
+        "exercises": list(exercise_totals.values()),
+        "exercise_sets": all_sets,
+    }
+
+
+def _summarize_activities(client: Any, activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Summarize activities, attaching exercise sets to strength activities.
+
+    Each strength activity costs an extra API call, so enrichment is capped
+    at STRENGTH_DETAIL_LIMIT to limit rate-limit (429) exposure.
+    """
+    results = []
+    enriched_strength_count = 0
+    for activity in activities:
+        summary = _summarize_activity(activity)
+        if _is_strength(activity) and summary.get("activity_id") and enriched_strength_count < STRENGTH_DETAIL_LIMIT:
+            try:
+                strength_sets = client.get_activity_exercise_sets(summary["activity_id"])
+                summary["strength_training"] = _summarize_strength_sets(strength_sets)
+                enriched_strength_count += 1
+            except Exception:
+                summary["strength_training"] = None
+        results.append(summary)
+    return results
+
+
 def register(mcp: FastMCP):
     @mcp.tool()
     def get_recent_activities(count: int = 20) -> list[dict[str, Any]]:
-        """Get recent running activities. Returns a list of running activities
-        with key metrics like distance, pace, heart rate, cadence, and elevation.
+        """Get recent activities. Returns a list of activities with key metrics
+        like type, distance, duration, heart rate, calories, and training effect.
 
         Args:
             count: Number of activities to return (default: 20, max: 100)
@@ -141,25 +233,18 @@ def register(mcp: FastMCP):
 
         client = get_client()
         count = min(count, 100)
+        activities = client.get_activities(start=0, limit=count)
 
-        # Fetch more than needed to account for non-running activities
-        activities = client.get_activities(start=0, limit=count * 3)
-
-        running = []
-        for activity in activities:
-            if _is_running(activity):
-                running.append(_summarize_activity(activity))
-                if len(running) >= count:
-                    break
-
-        return running
+        return _summarize_activities(client, activities)
 
     @mcp.tool()
     def get_activities_by_date(
         start_date: str,
         end_date: str,
     ) -> list[dict[str, Any]]:
-        """Get running activities within a date range.
+        """Get activities within a date range. Returns all activity types
+        (running, strength, cycling, etc.) with the same fields as
+        get_recent_activities.
 
         Args:
             start_date: Start date (YYYY-MM-DD)
@@ -168,9 +253,9 @@ def register(mcp: FastMCP):
         from garmin_mcp import get_client
 
         client = get_client()
-        activities = client.get_activities_by_date(start_date, end_date, "running")
+        activities = client.get_activities_by_date(start_date, end_date)
 
-        return [_summarize_activity(a) for a in activities if _is_running(a)]
+        return _summarize_activities(client, activities)
 
     @mcp.tool()
     def get_activity_detail(activity_id: int) -> dict[str, Any]:
